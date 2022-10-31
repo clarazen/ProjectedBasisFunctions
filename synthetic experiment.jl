@@ -12,16 +12,16 @@ using StatsBase
 using Distributions
 
 
-R           = 20;
+R           = 1;
 N           = 5000;     # number of data points
 D           = 3;       # dimensions
 M           = 40;       # number of basis functions per dimension
-hyp         = [0.05*ones(D), 1., 0.01];
+hyp         = [0.01*ones(D), 1., 0.001];
 Xall,~,~,~  = gensynthdata(N,D,hyp);
 
 boundsMin   = minimum(Xall,dims=1);
 boundsMax   = maximum(Xall,dims=1);
-L           = 2*((boundsMax.-boundsMin) ./ 2)[1,:] #.+ ((boundsMax.-boundsMin) ./ 4)[1,:];
+L           = 1.5*((boundsMax.-boundsMin) ./ 2)[1,:] #.+ ((boundsMax.-boundsMin) ./ 4)[1,:];
 
 Φ_          = colectofbasisfunc(M*ones(D),Xall,hyp[1],hyp[2],L,true);
 Φ_mat       = khr2mat(Φ_);
@@ -30,7 +30,7 @@ K̃           = Φ_mat*Φ_mat';
 K           = covSE(Xall,Xall,hyp);
             norm(K-K̃)/norm(K)
 
-#w,err       = MPT_SVD(mps2vec(TT_ALS(randn(M^3),[M M M],[1,R,R,1])),[M M M],1e-15);
+#w,err       = MPT_SVD(mps2vec(TT_ALS(randn(M^3),[M M M],[1,R,R,1])),[M M M],1e-10);
 #            shiftMPTnorm(w,3,-1)
 #Wd          = mpo2mat(getU(w,2))
 #fall        = Φ_mat*Wd*randn(length(w[2]));
@@ -40,17 +40,24 @@ w2          = randn(R*M*R);
 w3          = Matrix(qr(randn(M,R)).Q);
 Wd          = kron(kron(w3,Matrix(I,M,M)),w1)
 
-Φ_matWd = Φ_mat*Wd
-norm(Φ_matWd*Φ_matWd'-K)/norm(K)
+#Φ_matWd = Φ_mat*Wd
+#norm(Φ_matWd*Φ_matWd'-K)/norm(K)
 
-fall        = Φ_mat*w2
-yall        = fall + sqrt(hyp[3])*randn(size(fall))
+fall        = Φ_mat*Wd*w2
+SNR         = 10;
+noise_norm  = norm(fall)/(10^(SNR/20))
+σ_n         = sqrt(noise_norm^2/(length(fall)-1))
+noise       = randn(size(fall))
+noise       = noise/norm(noise)*noise_norm;
+yall        = fall + noise
 
 X           = Xall[1:4000,:];
 Xstar       = Xall[4001:5000,:];
 y           = yall[1:4000];
 ystar       = fall[4001:5000];
-
+#################################### creation of artificial data finished
+var(fall)
+hyp[3]      = σ_n^2
 Φ_          = colectofbasisfunc(M*ones(D),X,hyp[1],hyp[2],L,true);
 Φ_mat       = khr2mat(Φ_);
 Φstar_      = colectofbasisfunc(M*ones(D),Xstar,hyp[1],hyp[2],L,true);
@@ -59,15 +66,12 @@ ystar       = fall[4001:5000];
 # full GP
 K           = covSE(X,X,hyp);
 mstar,Pstar = fullGP(K,X,Xstar,y,hyp,false);
-#p = sortperm(mstar-ystar)
-#scatter(abs.(mstar-ystar)[p],Pstar[p])
-#scatter((mstar-ystar) ./ Pstar)
             norm(mstar-ystar)/norm(ystar)
 
 # tt approximation
 # ALS to find weight matrix
 rnks        = Int.([1, R*ones(D-1,1)..., 1]);
-maxiter     = 10;
+maxiter     = 5;
 @time tt,res  =  ALS_krtt_mod(y,Φ_,rnks,maxiter,hyp[3],hyp[3]);
 m_tt        = Φstar_mat*mps2vec(tt);
             norm(y - Φ_mat*mps2vec(tt))/norm(y)
