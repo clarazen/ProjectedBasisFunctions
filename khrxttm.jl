@@ -1,78 +1,162 @@
-function khrxttm(d::Int,leftd::Array{Float64},rightd::Array{Float64})
+function ALS_modelweights(y::Vector,khr::Vector{Matrix},rnks::Vector{Int},maxiter,λ::Float64)
 
-    # compute product
-    Md      = size(leftd,1)
-    N       = size(leftd,d+2)
-    Rd      = size(leftd,d+1)
-    Rdd     = size(rightd,ndims(rightd)-1)
-    Tmp     = permutedims(leftd,[collect(2:d+1)...,1,d+2])
-    left    = reshape(Tmp,(length(Tmp)/(Md*M), Md*M))
-    Tmp     = permutedims(rightd,[collect(2:d+1)...,1,d+2])
-    right   = reshape(Tmp,(length(Tmp)/(Md*M), Md*M))
+    D           = size(khr,1)
+    Md          = size(khr[1],2)
 
-    tmp     = KhatriRao(left,right,2)
-    Tmp     = reshape(tmp,(Rdd,Rd,Md,N))
-    pr      = permutedims(Tmp,[2,3,1,4])
+##########################################################################
+    # creating site-D canonical initial tensor train    
+    cores = Vector{Array{Float64,3}}(undef,D);
+    for i = 1:D-1 
+        tmp = qr(rand(rnks[i]*Md, rnks[i+1]));
+        cores[i] = reshape(Matrix(tmp.Q),(rnks[i], Md, rnks[i+1]));
+    end
+    cores[D]    = reshape(rand(rnks[D]*Md),(rnks[D], Md, 1));
+    tt0         = MPT(cores,D);
+###########################################################################
+    # initialize 
+    tt          = tt0
+    res         = zeros(maxiter,2D-2)
+    left,right  = initsupercores(khr,tt0);
+    swipe       = [collect(D:-1:2)..., collect(1:D-1)...];
+    Dir         = Int.([-ones(1,D-1)...,ones(1,D-1)...]);
+    for iter = 1:maxiter
+        for k = 1:2D-2
+            d           = swipe[k];
+            # compute product Φ*W_{\setminus d}
+            if d == 1
+                # left[d] is useless, only inputted to not throw error
+                ΦWd     = getprojectedKhR(d,left[1],right[2],khr[1]); 
+            elseif d == D
+                # right[d] is useless, only inputted to not throw error
+                ΦWd     = getprojectedKhR(D,left[D-1],right[D],khr[D]);
+            else
+                ΦWd     = getprojectedKhR(d,left[d-1],right[d+1],khr[d]);
+            end
+            # update dth tt-core
+            tmp         = ΦWd'*ΦWd + λ*Matrix(I,size(ΦWd,2),size(ΦWd,2));
+            tt[d]       = reshape(tmp\(ΦWd'*y),size(tt0[d])) # consider using pinv
+            # compute residual
+            res[iter,k] = norm(y - ΦWd*tt[d][:])/norm(y)
+            # shift norm to next core-to-be-updated
+            tt          = shiftMPTnorm(tt,d,Dir[k]) 
+            # compute new supercores
+            left,right  = getsupercores!(d,left,right,tt[d],khr[d],Dir[k])                 
+        end
+    end
+    
+    return tt,res
+end
 
+function getprojectedKhR(d::Int,leftd::Array{Float64},rightd::Array{Float64},khr::Matrix)
+
+    # computes the projected basis functions, Φ*W_{\setminus d} 
+    # for ALS to compute model weights of model w = Φ*W_{\setminus d}*w^{(d)}
+    N           = size(leftd,1)
+    Rd          = size(leftd,2)
+    Md          = size(khr,2)
+
+    if d == D 
+        pr      = KhatriRao(khr,leftd,1)
+    elseif d == 1
+        pr      = KhatriRao(rightd,khr,1)
+    else
+        pr      = KhatriRao(KhatriRao(rightd,khr,1),leftd,1)
+    end    
     return pr
 
 end
 
-function getsupercore(d::Int,left::Vector{Array},right::Vector{Array},newcore::Array{Float64},khr::Matrix,dir::Int)
+function getsupercores!(d::Int,left::Vector{Array},right::Vector{Array},ttcore::Array{Float64},khr::Matrix,dir::Int)
 
     if dir == 1 
-        prevsupercore   = left[d-1];
-        # new super core is previous left super core contracted with updated core
-        Md              = size(prevsupercore,1)
-        O               = size(prevsupercore,2:d)   # O_1 ... O_d-1
-        Rd              = size(prevsupercore,d+1)
-        N               = size(prevsupercore,d+2)
-        Tmp             = permute(prevsupercore,[collect(2:d)...,d+2,1,d+1])
-        tmp1            = reshape(Tmp, ((prod(O)*N)/(Md*Rd),Md*Rd))
-
-        Od              = size(newcore,2)
-        Rdd             = size(newcore,4)
-        Tmp             = permutedims(newcore,[3,1,2,4])
-        tmp2            = reshape(Tmp,(Md*Rd,(Od*Rdd)/(Md*Rd)))
-        Tmp             = reshape(tmp1*tmp2,[O...,N,Od,Rdd])
-        # Khatri-Rao product with next matrix from Khr matrix
-        Tmp             = permutedims(Tmp,(collect(1:d-1)...,d+1,d+2,d))
-        tmp             = reshape(Tmp,(prod(O)*Od*Rdd,N))
-        tmp             = KhatriRao(tmp,khr,2)
-        left[d]         = reshape(tmp,(size(khr,2),O...,Od,Rdd,N))
-        return left
+        if d == 1
+            M1              = size(khr,2)
+            R2              = size(ttcore,3)
+            left[1]         = khr*reshape(ttcore,M1,R2)
+        else
+            prevsupercore   = left[d-1];
+            N               = size(prevsupercore,1)
+            Rd              = size(prevsupercore,2)
+            Rdd             = size(ttcore,3)   # R_d+1
+            Md              = size(khr,2)
+            # Khatri-Rao product with next matrix from Khr matrix
+            tmp             = KhatriRao(prevsupercore,khr,1)
+            Tmp             = reshape(tmp,N,Md,Rd)
+            Tmp             = permutedims(Tmp,[1 3 2])
+            tmp1            = reshape(Tmp,    N,Rd*Md)
+            # contraction with tt-core
+            tmp2            = reshape(ttcore,   Rd*Md,Rdd) 
+            left[d]         = reshape(tmp1*tmp2,(N,Rdd))
+        end
     else 
-        prevsupercore   = right[d-1];
-        # new super core is previous right super core contracted with updated core
-        Md              = size(prevsupercore,1)     # M_d
-        O               = size(prevsupercore,2:d-1) # O_D ... O_d+2
-        Rdd             = size(prevsupercore,d)     # R_d+1
-        Odd             = size(prevsupercore,d+1)   # O_d+1
-        N               = size(prevsupercore,d+2)   # N
-        Tmp             = permute(prevsupercore,[collect(2:d-1)...,d,d+1,1,d+2])
-        tmp1            = reshape(Tmp, ((prod(O)*Odd*N)/(Md*Rd),Md*Rd))
-
-        Od              = size(newcore,2)
-        Rdd             = size(newcore,4)
-        Tmp             = permutedims(newcore,[3,4,1,2])
-        tmp2            = reshape(Tmp,(Md*Rdd,(Od*Rd)/(Md*Rdd)))
-        Tmp             = reshape(tmp1*tmp2,[O...,N,Od,Rd])
-        # Khatri-Rao product with next matrix from Khr matrix
-        Tmp             = permutedims(Tmp,(collect(1:d-2)...,d,d+1,d-1))
-        tmp             = reshape(Tmp,(prod(O)*Odd*Rd,N))
-        tmp             = KhatriRao(tmp,khr,2)
-        # reshape one more time i think
-        right[d]        = reshape(tmp,(size(khr,2),O...,Od,Rd,N))
-        return right
+        if d == D
+            MD              = size(khr,2)  
+            RD              = size(ttcore,1)
+            right[D]        = khr*reshape(ttcore,RD,MD)'
+        else
+            prevsupercore   = right[d+1];
+            N               = size(prevsupercore,1)
+            Rdd             = size(prevsupercore,2)  # R_d+1
+            Md              = size(khr,2)  
+            Rd              = size(ttcore,1)
+            # Khatri-Rao product with next matrix from Khr matrix
+            tmp1            = KhatriRao(prevsupercore,khr,1)
+            # contraction of previous supercore and tt-core
+            tmp2            = reshape(ttcore,Rd,Md*Rdd)'
+            right[d]        = tmp1*tmp2
+        end
     end
-
+    return left,right
 end
 
-function initsupercores(left::Vector{Array},right::Vector{Array},ttm0::MPT{4},khr::Vector{Matrix})
-    # initializes leftd and right d for a the first update of the last core
-    left[1] = ones();
-   for d = 1:D
-        left[d+1] = getsupercore(d,left,right,ttm0[d],khr[d],1)
-   end
-   right[D] = ones(); 
+function initsupercores(khr::Vector{Matrix},tt0::MPT{3})
+    # initializes left and right supercores for a the first update in the ALS (last core)
+    # works yay :) 
+    D           = size(khr,1)
+    M1          = size(khr[1],2)
+    R2          = size(tt0[1],3)
+    MD          = size(khr[D],2)
+    RD          = size(tt0[D],1)
+    left        = Vector{Array}(undef,D)
+    right       = Vector{Array}(undef,D)
+    left[1]     = khr[1]*reshape(tt0[1],M1,R2)
+    for d = 2:D-1
+        left,right = getsupercores!(d,left,right,tt0[d],khr[d],1)
+    end
+    right[D]   = khr[D]*reshape(tt0[D],RD,MD)'
+    return left,right
+end
+
+function initsupercores(khr::Vector{Matrix},tt0::MPT{3},bool::Bool)
+    D           = size(khr,1)
+    left        = Vector{Array}(undef,D)
+    right       = Vector{Array}(undef,D)
+    MD          = size(khr[D],2)
+    RD          = size(tt0[D],1)
+    if bool == true # start with site-1
+        right[D]     = khr[D]*reshape(tt0[D],RD,MD)'
+        for d = D-1:-1:2
+            left,right = getsupercores!(d,left,right,tt0[d],khr[d],-1)
+        end
+    end
+    return left,right
+end
+
+function getWd(tt::MPT{3},d::Int)
+    # computes the matrix W_{∖setminus d} in TT matrix format
+    D           = order(tt)
+    middlesizes = size(tt,true)
+    M           = middlesizes[d]
+    newms       = zeros(2,D)
+    newms[1,:]  = middlesizes
+    newms[2,:]  = ones(D)
+    Wd          = mps2mpo(tt,Int.(newms))
+    Wd[d]       = reshape(Matrix(I,(M,M)),(1,M,M,1))
+    if d>1
+        Wd[d-1] = permutedims(Wd[d-1],(1,2,4,3))
+    end
+    if d<D
+        Wd[d+1] = permutedims(Wd[d+1],(3,2,1,4))
+    end
+    return Wd
 end
