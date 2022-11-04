@@ -34,12 +34,13 @@ function ALS_modelweights(y::Vector,khr::Vector{Matrix},rnks::Vector{Int},maxite
             end
             # update dth tt-core
             tmp         = ΦWd'*ΦWd + λ*Matrix(I,size(ΦWd,2),size(ΦWd,2));
-            tt[d]       = reshape(tmp\(ΦWd'*y),size(tt0[d])) # consider using pinv
+            #tt[d]       = reshape(pinv(ΦWd)*y,size(tt0[d])) # how to use pinv with regularization?
+            tt[d]       = reshape(tmp\(ΦWd'*y),size(tt0[d])) 
             # compute residual
             res[iter,k] = norm(y - ΦWd*tt[d][:])/norm(y)
             # shift norm to next core-to-be-updated
             tt          = shiftMPTnorm(tt,d,Dir[k]) 
-            # compute new supercores
+            # compute new supercore with updated tt-core
             left,right  = getsupercores!(d,left,right,tt[d],khr[d],Dir[k])                 
         end
     end

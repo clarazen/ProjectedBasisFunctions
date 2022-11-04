@@ -12,7 +12,7 @@ using StatsBase
 using Distributions
 
 
-Rall        = [1 5 10 20];
+Rall        = [1 5 10 20 40];
 N           = 5000;     # number of data points
 D           = 3;       # dimensions
 M           = 40;       # number of basis functions per dimension
@@ -30,16 +30,12 @@ K̃           = Φ_mat*Φ_mat';
 K           = covSE(Xall,Xall,hyp);
             norm(K-K̃)/norm(K)
 
-#w,err       = MPT_SVD(mps2vec(TT_ALS(randn(M^3),[M M M],[1,R,R,1])),[M M M],1e-10);
-#            shiftMPTnorm(w,3,-1)
-#Wd          = mpo2mat(getU(w,2))
-#fall        = Φ_mat*Wd*randn(length(w[2]));
-
 err_gp = zeros(4,10)
 err_tt = zeros(4,10)
 err_rr = zeros(4,10)
 resi   = zeros(4,10)
 
+#j = 1; i = 1;
 for i = 1:4
 for j = 1:10
     R           = Rall[i];
@@ -71,23 +67,17 @@ for j = 1:10
     # full GP
     K           = covSE(X,X,hyp);
     mstar,Pstar = fullGP(K,X,Xstar,y,hyp,false);
-    err_gp[i,j] = norm(mstar-ystar)/norm(ystar)
+    SMSE_gp[i,j],MSLL_gp[i,j] = errormeasures(m_star,(P_star ./ 2).^2,ytest,σ_n)
 
     # tt approximation
     # ALS to find weight matrix
     rnks        = Int.([1, R*ones(D-1,1)..., 1]);
     maxiter     = 5;
     @time tt,res  =  ALS_krtt_mod(y,Φ_,rnks,maxiter,hyp[3],hyp[3]);
-    m_tt        = Φstar_mat*mps2vec(tt);
-                norm(y - Φ_mat*mps2vec(tt))/norm(y)
-    err_tt[i,j] = norm(ystar-m_tt)/norm(ystar)
-    resi[i,j]   = res[end]
     # Bayesian update of second core
-    #=
                 shiftMPTnorm(tt,D,-1);
     ttm         = getU(tt,2);   # works       
     U           = krtimesttm(Φ_,transpose(ttm)); # works
-    W2          = mpo2mat(ttm);
     tmp         = U*U';
     tmp         = tmp + hyp[3]*Matrix(I,size(tmp));     
     tt[2]       = reshape(tmp\(U*y),size(tt[2]))
@@ -95,9 +85,9 @@ for j = 1:10
     cova2       = inv(tmp);
     Φstarttm    = krtimesttm(Φstar_,transpose(ttm));
     P_tt        = hyp[3]*Φstarttm'*cova2*Φstarttm;
-    P_tt        = 2*sqrt.(diag(P_tt));
-    cov_tt      = (ystar-m_tt) ./ Pstar
-    err_tt      = norm(ystar-m_tt)/norm(ystar) =#
+    P_tt        = diag(P_tt);
+    SMSE_tt[i,j],MSLL_tt[i,j] = errormeasures(m_tt,P_tt,ytest,σ_n)
+    
 
     ## rr approximation
     budget          = R*R*M;
@@ -114,14 +104,12 @@ for j = 1:10
     K               = covSE(X,X,hyp)
                     norm(K-K̃)/norm(K)
 
-                    # sth is not right here maybe
     tmp             = Φmat'*Φmat + (hyp[3]*mpo2mat(invΛ)[p,p][1:budget,1:budget]);
     w_rr            = tmp\(Φmat'*y);
     m_rr            = Φsmat * w_rr;
     P_rr            = hyp[3]*Φsmat * inv(tmp) * Φsmat';
-    P_rr            = 2*sqrt.(diag(P_rr));
-    err_rr[i,j]     = norm(ystar-m_rr)/norm(ystar)
-    cov_rr          = (ystar-m_rr) ./ Pstar
+    P_rr            = diag(P_rr);
+    SMSE_rr[i,j],MSLL_rr[i,j] = errormeasures(m_rr,P_r,ytest,σ_n)
 end
 end
 

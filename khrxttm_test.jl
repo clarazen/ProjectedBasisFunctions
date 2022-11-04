@@ -31,7 +31,7 @@ K           = covSE(Xall,Xall,hyp);
 
 # test initialTT and getsupercore! for dir=1
 R1          = 10
-R2          = 10
+R2          = 11
 R           = 10
 tt0         = initialTT(D,M,[1,R1,R2,1]);
 left,right  = initsupercores(Φ_,tt0);
@@ -54,8 +54,8 @@ ref         = Φ_mat*mpo2mat(getWd(tt0,1));
 norm(test-ref)/norm(ref)
 
 shiftMPTnorm(tt0,1,1);
-left1        = Φ_[1]*reshape(tt0[1],M,R)
-right1       = Φ_[D]*reshape(tt0[D],R,M)'
+left1        = Φ_[1]*reshape(tt0[1],M,R1)
+right1       = Φ_[D]*reshape(tt0[D],R2,M)'
 test        = KhatriRao(KhatriRao(right1,Φ_[2],1),left1,1)
 ref         = Φ_mat*mpo2mat(getWd(tt0,2));
 norm(test-ref)/norm(ref)
@@ -75,6 +75,6 @@ noise       = randn(size(fall))
 noise       = noise/norm(noise)*noise_norm;
 y           = fall + noise
 
-@time tt,res = ALS_modelweights(y,Φ_,[1,10,10,1],10,σ_n^2)
+@time tt,res = ALS_modelweights(y,Φ_,[1,R1,R2,1],10,σ_n^2)
 
 norm(Φ_mat*mps2vec(tt) - y)/norm(y)
