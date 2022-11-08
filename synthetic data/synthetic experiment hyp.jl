@@ -10,13 +10,14 @@ using Optim
 using DelimitedFiles
 using StatsBase
 using Distributions
+using GaussianProcesses
 
 
 Rall        = [1 5 10 20 40];
 N           = 5000;     # number of data points
 D           = 3;       # dimensions
 M           = 40;       # number of basis functions per dimension
-hyp         = [0.01*ones(D), 1., 0.001];
+hyp         = [0.02*ones(D), 1., 0.001];
 Xall,~,~,~  = gensynthdata(N,D,hyp);
 
 boundsMin   = minimum(Xall,dims=1);
@@ -35,9 +36,9 @@ err_tt = zeros(4,10)
 err_rr = zeros(4,10)
 resi   = zeros(4,10)
 
-#j = 1; i = 1;
-for i = 1:4
-for j = 1:10
+j = 1; i = 2;
+#for i = 1:4
+#for j = 1:10
     R           = Rall[i];
     w1          = Matrix(qr(randn(M,R)).Q);
     w2          = randn(R*M*R);
@@ -56,6 +57,9 @@ for j = 1:10
     Xstar       = Xall[4001:5000,:];
     y           = yall[1:4000];
     ystar       = fall[4001:5000];
+    
+    writedlm("X_synth.csv",X)
+    writedlm("y_synth.csv",yall)
     #################################### creation of artificial data finished
     var(fall)
     hyp[3]      = σ_n^2
@@ -73,7 +77,7 @@ for j = 1:10
     # ALS to find weight matrix
     rnks        = Int.([1, R*ones(D-1,1)..., 1]);
     maxiter     = 5;
-    @time tt,res  =  ALS_krtt_mod(y,Φ_,rnks,maxiter,hyp[3],hyp[3]);
+    @time tt,res  =  ALS_modelweights(y,Φ_,rnks,maxiter,hyp[3],hyp[3]);
     # Bayesian update of second core
                 shiftMPTnorm(tt,D,-1);
     ttm         = getU(tt,2);   # works       
@@ -110,6 +114,6 @@ for j = 1:10
     P_rr            = hyp[3]*Φsmat * inv(tmp) * Φsmat';
     P_rr            = diag(P_rr);
     SMSE_rr[i,j],MSLL_rr[i,j] = errormeasures(m_rr,P_r,ytest,σ_n)
-end
-end
+#end
+#end
 
