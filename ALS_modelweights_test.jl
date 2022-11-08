@@ -1,9 +1,9 @@
 using LinearAlgebra
 using Revise
 using Pkg
-Pkg.activate("C:/Users/cmmenzen/.julia/dev/BigMat")
+Pkg.add("https://github.com/clarazen/BigMat.git")
 using BigMat
-Pkg.activate("C:/Users/cmmenzen/.julia/dev/TN4GP/")
+Pkg.activate("https://github.com/clarazen/TN4GP.git")
 using TN4GP
 using Plots
 using Optim

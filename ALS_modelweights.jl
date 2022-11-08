@@ -1,10 +1,17 @@
 function ALS_modelweights(y::Vector,khr::Vector{Matrix},rnks::Vector{Int},maxiter,λ::Float64)
+# This function solves the linear system y = khr*w with the ALS for the weight w in tensor train format.
+# INPUTS: 
+#   y       observations
+#   khr     matrices that together define a matrix with Khatri-Rao structure, as in eq. (9)
+#   rnks    ranks for the TT
+#   maxiter maximum number of iterations
+#   λ       regularization parameter
 
     D           = size(khr,1)
     Md          = size(khr[1],2)
 
 ##########################################################################
-    # creating site-D canonical initial tensor train    
+    # create site-D canonical initial tensor train    
     cores = Vector{Array{Float64,3}}(undef,D);
     for i = 1:D-1 
         tmp = qr(rand(rnks[i]*Md, rnks[i+1]));

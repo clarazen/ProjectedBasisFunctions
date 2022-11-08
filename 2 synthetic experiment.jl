@@ -1,9 +1,9 @@
 using LinearAlgebra
 using Revise
 using Pkg
-Pkg.activate("C:/Users/cmmenzen/.julia/dev/BigMat")
+Pkg.add("https://github.com/clarazen/BigMat.git")
 using BigMat
-Pkg.activate("C:/Users/cmmenzen/.julia/dev/TN4GP/")
+Pkg.activate("https://github.com/clarazen/TN4GP.git")
 using TN4GP
 using Plots
 using Optim
@@ -13,16 +13,16 @@ using Distributions
 using Optim
 
 
-Rall        = [1 5 10 20 40];
+Rall        = [1 5 10 20];
 N           = 5000;     # number of data points
 D           = 3;       # dimensions
-M           = 40;       # number of basis functions per dimension
+M           = 20;       # number of basis functions per dimension
 hyp         = [0.02*ones(D), 1., 0.001];
 Xall,~,~,~  = gensynthdata(N,D,hyp);
 
 boundsMin   = minimum(Xall,dims=1);
 boundsMax   = maximum(Xall,dims=1);
-L           = 1.5*((boundsMax.-boundsMin) ./ 2)[1,:] #.+ ((boundsMax.-boundsMin) ./ 4)[1,:];
+L           = 1.5*((boundsMax.-boundsMin) ./ 2)[1,:] 
 
 Φ_          = colectofbasisfunc(M*ones(D),Xall,hyp[1],hyp[2],L,true);
 Φ_mat       = khr2mat(Φ_);
@@ -36,9 +36,8 @@ err_tt = zeros(4,10)
 err_rr = zeros(4,10)
 resi   = zeros(4,10)
 
-j = 1; i = 2;
-#for i = 1:4
-#for j = 1:10
+for i = 1:4
+for j = 1:10
     R           = Rall[i];
     w1          = Matrix(qr(randn(M,R)).Q);
     w2          = randn(R*M*R);
@@ -126,6 +125,6 @@ j = 1; i = 2;
     P_rr            = diag(P_rr);
     norm(ystar-m_rr)/norm(ystar)
     SMSE_rr[i,j],MSLL_rr[i,j] = errormeasures(m_rr,P_r,ytest,σ_n)
-#end
-#end
+end
+end
 
