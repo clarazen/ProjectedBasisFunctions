@@ -34,7 +34,7 @@ for i = 1:36
     pl[i] = scatter(X[:,1],X[:,2],marker_z=Φmat[:,p[i]],markerstrokewidth = 0,markerwidth=.01,axis=([],false),legend=:none)
 end
 plot(pl...,layout=(6,6))
-savefig("bf1")
+savefig("Plots/bf1")
 
 # tt approach
 Φ_        = colectofbasisfunc(M*ones(D),X,hyp_opt[1],hyp_opt[2],L,true);
@@ -58,5 +58,5 @@ for i = 1:36
     pl[i] = scatter(X[:,1],X[:,2],marker_z=U2[i,:],markerstrokewidth = 0,axis=([],false),legend=:none)
 end
 plot(pl...,layout=(6,6))
-savefig("bf2")
+savefig("Plots/bf2")
 
