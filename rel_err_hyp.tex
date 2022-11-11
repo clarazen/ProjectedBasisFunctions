@@ -1,0 +1,62 @@
+% Recommended preamble:
+\begin{tikzpicture}
+\begin{axis}[xmajorgrids, ymajorgrids, xlabel={TT-ranks}, ylabel={Relative error}, xtick={1,2,3,4}, xticklabels={1,5,10,20}]
+    \addplot[color={red}, mark={x}, error bars/y dir=both, error bars/y explicit]
+        coordinates {
+            (1,0.8548488000000003) +- (0,0.15855295627560317)
+            (2,0.3905046) +- (0,0.02058131212856297)
+            (3,0.31306750000000005) +- (0,0.015708690427417696)
+            (4,0.27919499999999997) +- (0,0.009568455895400384)
+        }
+        ;
+    \addplot[color={blue}, mark={x}, error bars/y dir=both, error bars/y explicit]
+        coordinates {
+            (1,0.9786296) +- (0,0.04006252166080191)
+            (2,0.6403738000000001) +- (0,0.037763301211626056)
+            (3,0.39609749999999994) +- (0,0.029091398615207355)
+            (4,0.27780689999999997) +- (0,0.009028143853159042)
+        }
+        ;
+    \addplot[color={green}, mark={x}, error bars/y dir=both, error bars/y explicit]
+        coordinates {
+            (1,0.03444092000000001) +- (0,0.0031263041370495825)
+            (2,0.120855) +- (0,0.0075953653851104095)
+            (3,0.2461954) +- (0,0.016573944941785386)
+            (4,0.27780689999999997) +- (0,0.009028143853159042)
+        }
+        ;
+    \addplot[color={red}, mark={x}, style={{dashed}}, error bars/y dir=both, error bars/y explicit]
+        coordinates {
+            (1,0.2848402) +- (0,0.009273043534891869)
+            (2,0.28323899999999996) +- (0,0.013332927827167015)
+            (3,0.2794011) +- (0,0.011758173237275332)
+            (4,0.27981079999999997) +- (0,0.012380630425520877)
+        }
+        ;
+    \addplot[color={blue}, mark={x}, style={{dashed}}, error bars/y dir=both, error bars/y explicit]
+        coordinates {
+            (1,0.9725204999999999) +- (0,0.007981868484258565)
+            (2,0.6742937999999998) +- (0,0.026059944550124357)
+            (3,0.3763116999999999) +- (0,0.014862183614425201)
+            (4,0.278378) +- (0,0.012288577957689903)
+        }
+        ;
+    \addplot[color={green}, mark={x}, style={{dashed}}, error bars/y dir=both, error bars/y explicit]
+        coordinates {
+            (1,0.15027259999999998) +- (0,0.004761386870790207)
+            (2,0.1540359) +- (0,0.009750247842434005)
+            (3,0.24368849999999997) +- (0,0.011083433295288566)
+            (4,0.278378) +- (0,0.012288577957689903)
+        }
+        ;
+    \addplot[color={orange}, mark={*}]
+        coordinates {
+            (1,0.001008464050168852)
+            (2,0.053819928190294415)
+            (3,0.300429143960008)
+            (4,1.0825492540674233)
+        }
+        ;
+    \legend{{full GP},{full GP (opt)},{reduced-rank},{reduced-rank (opt)},{Our method},{Our method (opt)},{optimzied sigma}}
+\end{axis}
+\end{tikzpicture}

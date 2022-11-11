@@ -189,7 +189,8 @@ figure = @pgf Axis(
         xlabel = "TT-ranks",
         ylabel = "MSLL",
         xtick = [1,2,3,4],
-        xticklabels = ["1","5","10","20"]
+        xticklabels = ["1","5","10","20"],
+        ymode  = "log"
     },
     Plot(
         {
