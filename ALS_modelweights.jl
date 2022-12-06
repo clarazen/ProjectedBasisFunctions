@@ -1,4 +1,4 @@
-function ALS_modelweights(y::Vector,khr::Vector{Matrix},rnks::Vector{Int},maxiter,λ::Float64)
+function ALS_modelweights(y::Vector,khr::Vector{Any},rnks::Vector{Int},maxiter,λ::Float64)
 # This function solves the linear system y = khr*w with the ALS for the weight w in tensor train format.
 # INPUTS: 
 #   y       observations
@@ -74,6 +74,25 @@ function getprojectedKhR(d::Int,leftd::Array{Float64},rightd::Array{Float64},khr
 
 end
 
+function getprojectedKhR(d::Int,leftd::Array{Float64},rightd::Array{Float64},khr::SparseMatrixCSC)
+
+    # computes the projected basis functions, Φ*W_{\setminus d} 
+    # for ALS to compute model weights of model w = Φ*W_{\setminus d}*w^{(d)}
+    N           = size(leftd,1)
+    Rd          = size(leftd,2)
+    Md          = size(khr,2)
+
+    if d == D 
+        pr      = KhatriRao(khr,leftd,1)
+    elseif d == 1
+        pr      = KhatriRao(rightd,khr,1)
+    else
+        pr      = KhatriRao(KhatriRao(rightd,khr,1),leftd,1)
+    end    
+    return pr
+
+end
+
 function getsupercores!(d::Int,left::Vector{Array},right::Vector{Array},ttcore::Array{Float64},khr::Matrix,dir::Int)
 
     if dir == 1 
@@ -117,7 +136,50 @@ function getsupercores!(d::Int,left::Vector{Array},right::Vector{Array},ttcore::
     return left,right
 end
 
-function initsupercores(khr::Vector{Matrix},tt0::MPT{3})
+function getsupercores!(d::Int,left::Vector{Array},right::Vector{Array},ttcore::Array{Float64},khr::SparseMatrixCSC,dir::Int)
+
+    if dir == 1 
+        if d == 1
+            M1              = size(khr,2)
+            R2              = size(ttcore,3)
+            left[1]         = khr*reshape(ttcore,M1,R2)
+        else
+            prevsupercore   = left[d-1];
+            N               = size(prevsupercore,1)
+            Rd              = size(prevsupercore,2)
+            Rdd             = size(ttcore,3)   # R_d+1
+            Md              = size(khr,2)
+            # Khatri-Rao product with next matrix from Khr matrix
+            tmp             = KhatriRao(prevsupercore,khr,1)
+            Tmp             = reshape(tmp,N,Md,Rd)
+            Tmp             = permutedims(Tmp,[1 3 2])
+            tmp1            = reshape(Tmp,    N,Rd*Md)
+            # contraction with tt-core
+            tmp2            = reshape(ttcore,   Rd*Md,Rdd) 
+            left[d]         = reshape(tmp1*tmp2,(N,Rdd))
+        end
+    else 
+        if d == D
+            MD              = size(khr,2)  
+            RD              = size(ttcore,1)
+            right[D]        = khr*reshape(ttcore,RD,MD)'
+        else
+            prevsupercore   = right[d+1];
+            N               = size(prevsupercore,1)
+            Rdd             = size(prevsupercore,2)  # R_d+1
+            Md              = size(khr,2)  
+            Rd              = size(ttcore,1)
+            # Khatri-Rao product with next matrix from Khr matrix
+            tmp1            = KhatriRao(prevsupercore,khr,1)
+            # contraction of previous supercore and tt-core
+            tmp2            = reshape(ttcore,Rd,Md*Rdd)'
+            right[d]        = tmp1*tmp2
+        end
+    end
+    return left,right
+end
+
+function initsupercores(khr::Vector{Any},tt0::MPT{3})
     # initializes left and right supercores for a the first update in the ALS (last core)
     # works yay :) 
     D           = size(khr,1)
@@ -135,7 +197,25 @@ function initsupercores(khr::Vector{Matrix},tt0::MPT{3})
     return left,right
 end
 
-function initsupercores(khr::Vector{Matrix},tt0::MPT{3},bool::Bool)
+function initsupercores(khr::Vector{SparseMatrixCSC},tt0::MPT{3})
+    # initializes left and right supercores for a the first update in the ALS (last core)
+    # works yay :) 
+    D           = size(khr,1)
+    M1          = size(khr[1],2)
+    R2          = size(tt0[1],3)
+    MD          = size(khr[D],2)
+    RD          = size(tt0[D],1)
+    left        = Vector{Array}(undef,D)
+    right       = Vector{Array}(undef,D)
+    left[1]     = khr[1]*reshape(tt0[1],M1,R2)
+    for d = 2:D-1
+        left,right = getsupercores!(d,left,right,tt0[d],khr[d],1)
+    end
+    right[D]   = khr[D]*reshape(tt0[D],RD,MD)'
+    return left,right
+end
+
+function initsupercores(khr::Vector{Any},tt0::MPT{3},bool::Bool)
     D           = size(khr,1)
     left        = Vector{Array}(undef,D)
     right       = Vector{Array}(undef,D)
