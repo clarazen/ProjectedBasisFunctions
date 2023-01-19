@@ -1,16 +1,16 @@
 using LinearAlgebra
 using Revise
 using Pkg
-Pkg.add("https://github.com/clarazen/BigMat.git")
+Pkg.activate("C:/Users/cmmenzen/.julia/dev/BigMat")
 using BigMat
-Pkg.activate("https://github.com/clarazen/TN4GP.git")
+Pkg.activate("C:/Users/cmmenzen/.julia/dev/TN4GP/")
 using TN4GP
 using Plots
 using Optim
 using DelimitedFiles
 using StatsBase
 using Distributions
-
+using SparseArrays
 
 N           = 5000;     # number of data points
 D           = 3;       # dimensions
@@ -29,21 +29,27 @@ K̃           = Φ_mat*Φ_mat';
 K           = covSE(Xall,Xall,hyp);
             norm(K-K̃)/norm(K)
 
-# test initialTT and getsupercore! for dir=1
+A = [1.0 2 3; 4 5 6; 7 8 9]
+B = [1.0 4 7; 2 5 8; 3 6 9]
+AB = KhatriRao(A,B,1)
+
+# test initialTT and getsupercore! for d=1
 R1          = 10
 R2          = 11
 R           = 10
+
+Φ_          = [Φ_[3],Φ_[2],Φ_[1]] # indices only work out if this is shuffled...
 tt0         = initialTT(D,M,[1,R1,R2,1]);
 left,right  = initsupercores(Φ_,tt0);
 test        = KhatriRao(left[2],Φ_[3],1);
 test        = reshape(test,N,M,R2);
 test        = permutedims(test,[1,3,2]);
 test        = reshape(test,N,M*R2);
-ref         = Φ_mat*mpo2mat(getWd(tt0,D));
+ref         = Φ_mat*mpo2mat(getWd(tt0,3));
 norm(test-ref)/norm(ref)
 
-# test getprojectedKhR
-test = getprojectedKhR(3,left[2],randn(4,4,4),Φ_[3])
+# test KhrxTTm
+test = KhRxTTm(3,left[2],randn(4,4,4),Φ_[3])
 
 ################
 shiftMPTnorm(tt0,3,-1);

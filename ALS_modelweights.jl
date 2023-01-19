@@ -1,4 +1,4 @@
-function ALS_modelweights(y::Vector,khr::Vector{Any},rnks::Vector{Int},maxiter,λ::Float64)
+function ALS_modelweights(y::Vector,khr::Vector{Matrix{Float64}},rnks::Vector{Int},maxiter,σₙ²::Float64)
 # This function solves the linear system y = khr*w with the ALS for the weight w in tensor train format.
 # INPUTS: 
 #   y       observations
@@ -31,17 +31,16 @@ function ALS_modelweights(y::Vector,khr::Vector{Any},rnks::Vector{Int},maxiter,�
             d           = swipe[k];
             # compute product Φ*W_{\setminus d}
             if d == 1
-                # left[d] is useless, only inputted to not throw error
-                ΦWd     = getprojectedKhR(d,left[1],right[2],khr[1]); 
+                # left[1] is useless, only inputted to not throw error
+                ΦWd     = KhRxTTm(d,left[1],right[2],khr[1]); 
             elseif d == D
-                # right[d] is useless, only inputted to not throw error
-                ΦWd     = getprojectedKhR(D,left[D-1],right[D],khr[D]);
+                # right[D] is useless, only inputted to not throw error
+                ΦWd     = KhRxTTm(D,left[D-1],right[D],khr[D]);
             else
-                ΦWd     = getprojectedKhR(d,left[d-1],right[d+1],khr[d]);
+                ΦWd     = KhRxTTm(d,left[d-1],right[d+1],khr[d]);
             end
             # update dth tt-core
-            tmp         = ΦWd'*ΦWd + λ*Matrix(I,size(ΦWd,2),size(ΦWd,2));
-            #tt[d]       = reshape(pinv(ΦWd)*y,size(tt0[d])) # how to use pinv with regularization?
+            tmp         = ΦWd'*ΦWd + σₙ² *Matrix(I,size(ΦWd,2),size(ΦWd,2));
             tt[d]       = reshape(tmp\(ΦWd'*y),size(tt0[d])) 
             # compute residual
             res[iter,k] = norm(y - ΦWd*tt[d][:])/norm(y)
@@ -55,7 +54,7 @@ function ALS_modelweights(y::Vector,khr::Vector{Any},rnks::Vector{Int},maxiter,�
     return tt,res
 end
 
-function getprojectedKhR(d::Int,leftd::Array{Float64},rightd::Array{Float64},khr::Matrix)
+function KhRxTTm(d::Int,leftd::Array{Float64},rightd::Array{Float64},khr::Matrix)
 
     # computes the projected basis functions, Φ*W_{\setminus d} 
     # for ALS to compute model weights of model w = Φ*W_{\setminus d}*w^{(d)}
@@ -74,10 +73,11 @@ function getprojectedKhR(d::Int,leftd::Array{Float64},rightd::Array{Float64},khr
 
 end
 
-function getprojectedKhR(d::Int,leftd::Array{Float64},rightd::Array{Float64},khr::SparseMatrixCSC)
+function KhRxTTm(d::Int,leftd::Array{Float64},rightd::Array{Float64},khr::SparseMatrixCSC{Float64, Int64})
 
-    # computes the projected basis functions, Φ*W_{\setminus d} 
-    # for ALS to compute model weights of model w = Φ*W_{\setminus d}*w^{(d)}
+    # computes product of matrix in Khatri-Rao format with matrix in TTm format expressed thru leftd and rightd
+    # for ALS to compute model weights of model w = Φ*Wd*Wd
+    # for ALS to compute covariance matrix of u for inducing inputs
     N           = size(leftd,1)
     Rd          = size(leftd,2)
     Md          = size(khr,2)
@@ -179,7 +179,7 @@ function getsupercores!(d::Int,left::Vector{Array},right::Vector{Array},ttcore::
     return left,right
 end
 
-function initsupercores(khr::Vector{Any},tt0::MPT{3})
+function initsupercores(khr::Vector{Matrix{Float64}},tt0::MPT{3})
     # initializes left and right supercores for a the first update in the ALS (last core)
     # works yay :) 
     D           = size(khr,1)
@@ -197,7 +197,7 @@ function initsupercores(khr::Vector{Any},tt0::MPT{3})
     return left,right
 end
 
-function initsupercores(khr::Vector{SparseMatrixCSC},tt0::MPT{3})
+function initsupercores(khr::Vector{SparseMatrixCSC{Float64, Int64}},tt0::MPT{3})
     # initializes left and right supercores for a the first update in the ALS (last core)
     # works yay :) 
     D           = size(khr,1)
@@ -215,7 +215,7 @@ function initsupercores(khr::Vector{SparseMatrixCSC},tt0::MPT{3})
     return left,right
 end
 
-function initsupercores(khr::Vector{Any},tt0::MPT{3},bool::Bool)
+function initsupercores(khr::Vector{Matrix{Any}},tt0::MPT{3},bool::Bool)
     D           = size(khr,1)
     left        = Vector{Array}(undef,D)
     right       = Vector{Array}(undef,D)
