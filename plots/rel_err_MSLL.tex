@@ -1,6 +1,6 @@
 % Recommended preamble:
 \begin{tikzpicture}
-\begin{axis}[xmajorgrids, ymajorgrids, xlabel={TT-ranks}, ylabel={MSLL}, xtick={1,2,3,4}, xticklabels={1,5,10,20}]
+\begin{axis}[xmajorgrids, ymajorgrids, xlabel={TT-ranks}, ylabel={MSLL}, xtick={1,2,3,4}, xticklabels={1,5,10,20}, ymode={log}]
     \addplot[color={red}, mark={x}, error bars/y dir=both, error bars/y explicit]
         coordinates {
             (1,407.0679999999999) +- (0,25.256522717464055)

@@ -1,12 +1,22 @@
 using LinearAlgebra
 using Revise
-using Pkg
-Pkg.activate("C:/Users/cmmenzen/.julia/dev/BigMat")
-using BigMat
-Pkg.activate("C:/Users/cmmenzen/.julia/dev/TN4GP/")
-using TN4GP
-using StatsBase
 using GaussianProcesses
+
+includet("functions/functionsBasic.jl")
+using .functionsBasic
+includet("functions/functions_KhatriRao_Kronecker.jl")
+using .functions_KhatriRao_Kronecker
+includet("functions/functionsBasisFunctions.jl")
+using .functionsBasisfunctions
+includet("functions/functionsMetrics.jl")
+using .functionsMetrics
+includet("functions/functionsTT.jl")
+using .functionsTT
+includet("functions/functionsALSmodelweights.jl")
+using .functionsALSmodelweights
+includet("functions/functionsTTmatmul.jl")
+using .functionsTTmatmul
+
 
 
 N               = 5000;     # number of data points
