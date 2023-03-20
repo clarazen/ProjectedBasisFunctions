@@ -19,7 +19,7 @@ using .functionsTTmatmul
 N               = 5000;     # number of data points
 D               = 3;        # dimensions
 Md              = 20;       # number of basis functions per dimension
-hyp             = [0.02, 1., 0.001];
+hyp             = [0.05, 1., 0.001];
 Xall,~,~,K_tot  = gensynthdata(N,D,hyp);
 
 boundsMin       = minimum(Xall,dims=1);
@@ -33,7 +33,7 @@ L               = 1.5*((boundsMax.-boundsMin) ./ 2)[1,:];
 K̃_tot           = Φ_tot_mat*Φ_tot_mat';
                 norm(K_tot-K̃_tot)/norm(K_tot)
 
-R               = 20#1, 5,10,20
+R               = 5#1, 5,10,20
 w1              = Matrix(qr(randn(Md,R)).Q);
 w2              = randn(R*Md*R);
 w3              = Matrix(qr(randn(Md,R)).Q);
@@ -68,27 +68,19 @@ RMSE_gp         = RMSE(mstar,ystar)
                 norm(ystar-mstar)/norm(ystar)
 
 # tt approximation
-# ALS to find weight matrix
+# ALS starting and finishing in second core
 rnks            = Int.([1, R*ones(D-1,1)..., 1]);
 maxiter         = 5;
-tt,res          = ALS_modelweights(y,Φ_,rnks,maxiter,hyp[3]);
-# Bayesian update of second core
-                shiftTTnorm(tt,D,-1);
+tt,cov2,res     = ALS_modelweights(y,Φ_,rnks,maxiter,hyp[3],2);
+m_tt2           = khrtimesttm(Φstar_,tt2ttm(tt,Int.(vcat(Md',ones(D)'))))[:,1];
 ttm             = getttm(tt,2);  
-U               = khrtimesttm(Φ_,ttm)
-tmp             = U'*U;
-tmp             = tmp + hyp[3]*Matrix(I,size(tmp));     
-
-tt[2]           = reshape(tmp\(U'*y),size(tt[2]))
-m_tt            = Φstar_mat*ttv2vec(tt);
-cova2           = inv(tmp);
 Φstarttm        = khrtimesttm(Φstar_,ttm);
-P_tt            = hyp[3]*Φstarttm*cova2*Φstarttm';
-P_tt            = diag(P_tt);
-MSLL_tt         = MSLL(m_tt[:,1],P_tt,ystar,σ_n)
-SMSE_tt         = SMSE(m_tt[:,1],ystar,y)
-RMSE_tt         = RMSE(m_tt[:,1],ystar)
-                norm(ystar-m_tt)/norm(ystar)
+P_tt2           = hyp[3]*Φstarttm*cov2*Φstarttm';
+P_tt2           = diag(P_tt2);
+MSLL_tt         = MSLL(m_tt2[:,1],P_tt2,ystar,σ_n)
+SMSE_tt         = SMSE(m_tt2[:,1],ystar,y)
+RMSE_tt         = RMSE(m_tt2[:,1],ystar)
+                norm(ystar-m_tt2)/norm(ystar)
 
 ## rr approximation
 budget          = R*R*Md

@@ -8,13 +8,13 @@ using ..functions_KhatriRao_Kronecker
 export ALS_modelweights
 
 function ALS_modelweights(y::Vector,khr::Vector{Matrix},rnks::Vector{Int},maxiter,σₙ²::Float64)
-# This function solves the linear system y = khr*w with the ALS for the weight w in tensor train format.
+# This function solves the linear system y = khr*tt with the ALS for the weight w in tensor train format.
 # INPUTS: 
 #   y       observations
 #   khr     matrices that together define a matrix with Khatri-Rao structure, as in eq. (9)
 #   rnks    ranks for the TT
 #   maxiter maximum number of iterations
-#   λ       regularization parameter
+#   σₙ²     noise variance (acts as regularization parameter)
 
     D           = size(khr,1)
     Md          = size(khr[1],2)
@@ -62,6 +62,71 @@ function ALS_modelweights(y::Vector,khr::Vector{Matrix},rnks::Vector{Int},maxite
     
     return tt,res
 end
+
+function ALS_modelweights(y::Vector,khr::Vector{Matrix},rnks::Vector{Int},maxiter,σₙ²::Float64,dd::Int)
+    # This function solves the linear system y = khr*tt with the ALS for the weight w in tensor train format.
+    # INPUTS: 
+    #   y       observations
+    #   khr     matrices that together define a matrix with Khatri-Rao structure, as in eq. (9)
+    #   rnks    ranks for the TT
+    #   maxiter maximum number of iterations
+    #   σₙ²     noise variance (acts as regularization parameter)
+    #   dd      first core to be updated       
+    
+        D           = size(khr,1)   
+    ##########################################################################
+        # create site-d canonical initial tensor train    
+        cores = Vector{Array{Float64,3}}(undef,D);
+        for d = 1:dd-1 
+            tmp         = qr(rand(rnks[d]*size(khr[d],2), rnks[d+1]));
+            cores[d]    = reshape(Matrix(tmp.Q),(rnks[d], size(khr[d],2), rnks[d+1]));
+        end
+        cores[dd]    = reshape(rand(rnks[dd]*size(khr[dd],2)*rnks[dd+1]),(rnks[dd], size(khr[dd],2), rnks[dd+1]))
+        for d = dd+1:D
+            tmp         = qr(rand(size(khr[d],2)*rnks[d+1],rnks[d]));
+            cores[d]    = reshape(Matrix(tmp.Q)',(rnks[d], size(khr[d],2), rnks[d+1]));
+        end
+        tt0         = TT(cores,dd);
+    ###########################################################################
+        # initialize 
+        tt          = tt0
+        res         = zeros(maxiter,2D-2)
+        left,right  = initsupercores(khr,tt0,dd);
+        swipe       = [collect(dd:D)...,collect(D-1:-1:2)...,collect(1:dd-1)...];
+        Dir         = Int.([ones(1,D-dd)...,-ones(1,D-1)...,ones(1,dd-1)...]);
+        covdd       = Matrix{Float64}
+        for iter = 1:maxiter
+            for k = 1:2D-2
+                d           = swipe[k];
+                # compute product Φ*W_{\setminus d}
+                if d == 1
+                    # left[1] is useless, only inputted to not throw error
+                    ΦWd     = KhRxTTm(1,left[1],right[2],khr[1],D); 
+                elseif d == D
+                    # right[D] is useless, only inputted to not throw error
+                    ΦWd     = KhRxTTm(D,left[D-1],right[D],khr[D],D);
+                else
+                    ΦWd     = KhRxTTm(d,left[d-1],right[d+1],khr[d],D);
+                end
+                # update dth tt-core
+                tmp         = ΦWd'*ΦWd + σₙ² *Matrix(I,size(ΦWd,2),size(ΦWd,2));
+                tt[d]       = reshape(tmp\(ΦWd'*y),size(tt0[d])) 
+                # compute residual
+                res[iter,k] = norm(y - ΦWd*tt[d][:])/norm(y)
+                # shift norm to next core-to-be-updated
+                tt          = shiftTTnorm(tt,d,Dir[k]) 
+                # compute new supercore with updated tt-core
+                left,right  = getsupercores!(d,left,right,tt[d],khr[d],Dir[k],D)              
+            end
+        end
+        # update dd-th tt-core
+        ΦWd         = KhRxTTm(dd,left[dd-1],right[dd+1],khr[dd],D);
+        tmp         = ΦWd'*ΦWd + σₙ² *Matrix(I,size(ΦWd,2),size(ΦWd,2));
+        tt[dd]      = reshape(tmp\(ΦWd'*y),size(tt0[dd])) 
+        covdd       = σₙ²*inv(tmp)
+    
+        return tt,covdd,res
+    end
 
 function KhRxTTm(d::Int,leftd::Array{Float64},rightd::Array{Float64},khr::Matrix,D::Int)
 
@@ -203,8 +268,8 @@ function initsupercores(khr::Vector{Matrix},tt0::TT)
     return left,right
 end
 
-function initsupercores(khr::Vector{SparseMatrixCSC{Float64, Int64}},tt0::TT)
-    # initializes left and right supercores for a the first update in the ALS (last core)
+function initsupercores(khr::Vector{Matrix},tt0::TT,dd::Int)
+    # initializes left and right supercores for a the first update in the ALS (dd-th core)
     # works yay :) 
     D           = size(khr,1)
     M1          = size(khr[1],2)
@@ -214,25 +279,14 @@ function initsupercores(khr::Vector{SparseMatrixCSC{Float64, Int64}},tt0::TT)
     left        = Vector{Array}(undef,D)
     right       = Vector{Array}(undef,D)
     left[1]     = khr[1]*reshape(tt0[1],M1,R2)
-    for d = 2:D-1
+    for d = 2:dd-1
         left,right = getsupercores!(d,left,right,tt0[d],khr[d],1,D)
     end
     right[D]   = khr[D]*reshape(tt0[D],RD,MD)'
-    return left,right
-end
-
-function initsupercores(khr::Vector{Matrix{Any}},tt0::TT,bool::Bool)
-    D           = size(khr,1)
-    left        = Vector{Array}(undef,D)
-    right       = Vector{Array}(undef,D)
-    MD          = size(khr[D],2)
-    RD          = size(tt0[D],1)
-    if bool == true # start with site-1
-        right[D]     = khr[D]*reshape(tt0[D],RD,MD)'
-        for d = D-1:-1:2
-            left,right = getsupercores!(d,left,right,tt0[d],khr[d],-1,D)
-        end
+    for d = D-1:-1:dd+1
+        left,right = getsupercores!(d,left,right,tt0[d],khr[d],-1,D)
     end
+
     return left,right
 end
 

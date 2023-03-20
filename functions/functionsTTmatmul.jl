@@ -49,12 +49,12 @@ function khrtimesttm(khr::Vector{Matrix},ttm::TTm)
     R3      = size(ttm[2],4)
 
     tmp     = khr[1]*reshape(ttm[1], (M1,O1*R2) )
-
     tmp     = KhatriRao(tmp,Matrix(khr[2]),1) 
+    
     Tmp     = permutedims(reshape(tmp, (N,M2,O1,R2) ), [1,3,4,2] )
-    tmp     = reshape(Tmp, (N*O1,M2*R2) )
+    tmp     = reshape(Tmp, (N*O1,R2*M2) )
     tmp     = reshape(tmp*reshape(ttm[2], (R2*M2,O2*R3) ), (N,O1*O2*R3) )
-    newdims = (N,O1,O2,R3)
+    colsz   = (O1,O2)
 
     for d = 2:D-1     
         Mdd     = size(ttm[d+1],2)
@@ -63,14 +63,15 @@ function khrtimesttm(khr::Vector{Matrix},ttm::TTm)
         Rddd    = size(ttm[d+1],4)
         
         tmp     = KhatriRao(tmp,Matrix(khr[d+1]),1)
-        Tmp     = permutedims(reshape(tmp, (N,Mdd,newdims[2:d+1]...,Rdd) ), [1,collect(3:d+2)...,2,d+3] )
-        tmp     = reshape(Tmp, (N*prod(newdims[2:d+1]),Mdd*Rdd) )
+        Tmp     = permutedims(reshape(tmp, (N,Mdd,colsz...,Rdd) ), [1,collect(3:d+2)...,d+3,2] )
+        tmp     = reshape(Tmp, (N*prod(colsz),Mdd*Rdd) )
         tmp     = tmp * reshape(ttm[d+1],Rdd*Mdd,Odd*Rddd)
+        tmp     = reshape(tmp, N,Int(length(tmp)/N) ) 
 
-        newdims = (N,newdims[2:d+1]...,Odd,Rddd)
+        colsz   = (colsz...,Odd)
         
     end
-    return reshape(tmp, (N,prod(newdims[2:end])) )
+    return reshape(tmp, (N,prod(colsz)) )
 end
 
 

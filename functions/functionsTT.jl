@@ -3,7 +3,7 @@ module functionsTT
 using LinearAlgebra
 import Base: transpose 
 
-export TT, TTv,TTm, size, norm, order, rank, shiftTTnorm, ttv2vec, ttm2mat
+export TT, TTv,TTm, size, norm, order, rank, shiftTTnorm, ttv2vec, ttm2mat, TTv_SVD, TTm_SVD
 
 mutable struct TT{N}
     cores::Vector{Array{Float64,N}}
@@ -105,5 +105,60 @@ function ttm2mat(ttm::TTm)
     matrix = reshape(tensor,(prod(sizes[1,:]),prod(sizes[2,:])));
     return matrix
 end
+
+function TTm_SVD(mat::Matrix,middlesizes::Matrix,acc::Float64)
+    sizes   = Tuple(reshape(middlesizes',(length(middlesizes),1)));
+    tensor  = reshape(mat,sizes);
+    permind = [ (i-1)*size(middlesizes,2)+j for j in 1:size(middlesizes,2) for i in 1:2 ];
+    tensor  = permutedims(tensor,permind);
+    resind  = Tuple([prod(col) for col in eachcol(middlesizes)]);
+    tensor  = reshape(tensor,resind)
+    tt,err  = TT_SVD(tensor,acc);
+    rnks    = rank(tt);
+    return TT( [reshape(tt[i],(rnks[i], middlesizes[:,i]..., rnks[i+1])) for i = 1:order(tt)] ),err
+end
+
+function TTv_SVD(vec::Vector,middlesizes::Vector,acc::Float64)
+    tensor  = reshape(vec,Tuple(middlesizes));
+    return TT_SVD(tensor,acc);
+end
+
+function TT_SVD(tensor::Array{Float64},ϵ::Float64)
+    ########################################################################    
+    #   Computes the cores of a TT for the given tensor and accuracy (acc)     
+    #   Resources:
+    #   V. Oseledets: Tensor-Train Decomposition, 2011, p.2301: Algorithm 1
+    #   April 2021, Clara Menzen
+    ########################################################################
+        D           = ndims(tensor);
+        cores       = Vector{Array{Float64,3}}(undef,D);
+        frobnorm    = norm(tensor); 
+    
+        δ = ϵ / sqrt(D-1) * frobnorm;
+        err2 = 0;
+        rprev = 1;
+        sizes = size(tensor);
+        C = reshape( tensor, (sizes[1], Int(length(tensor) / sizes[1]) ));
+        for k = 1 : D-1
+            # truncated svd 
+            F   = svd!(C); 
+            rcurr = length(F.S);
+    
+            sv2 = cumsum(reverse(F.S).^2);
+            tr  = Int(findfirst(sv2 .> δ^2))-1;
+            if tr > 0
+                rcurr = length(F.S) - tr;
+                err2 += sv2[tr];
+            end
+            
+            # new core
+            cores[k] = reshape(F.U[:,1:rcurr],(rprev,sizes[k],rcurr));
+            rprev    = rcurr;
+            C        = Diagonal(F.S[1:rcurr])*F.Vt[1:rcurr,:];
+            C        = reshape(C,(rcurr*sizes[k+1], Int(length(C) / (rcurr*sizes[k+1])) ) );
+        end
+        cores[D] = reshape(C,(rprev,sizes[D],1));
+        return TT(cores,D), sqrt(err2)/frobnorm
+    end
 
 end
