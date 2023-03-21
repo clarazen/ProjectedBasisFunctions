@@ -35,14 +35,14 @@ budget          = size(X,1);
 ΦR,ΛR           = colectofbasisfunc(budget,X,ℓ²,σ_f²,L)
 ΦsR,ΛsR         = colectofbasisfunc(budget,Xtest,ℓ²,σ_f²,L)
 
-Z               = σ_n²*diagm(1 ./ diag(Λ)) + Φ'*Φ;
+Z               = σ_n²*diagm(1 ./ diag(Λ)) + ΦR'*ΦR;
 Lchol           = cholesky(Z).L
 mstar           = ΦsR'*(Lchol' \ (Lchol\ (ΦR'*y)))
 vstar           = σ_n² * ΦsR'*(Lchol' \ (Lchol\ (ΦsR)))
 
 RMSE(mstar,ytest)
-MSLL(mstar[:,1],s_tt,ytest,sqrt(σ_n²))
+MSLL(mstar[:,1],sqrt.(vstar),ytest,sqrt(σ_n²))
 norm(mstar-ytest)/norm(ytest)
 
 plot(ytest)
-plot!(mstar,ribbon=[2s_tt 2s_tt])
+plot!(mstar,ribbon=[2sqrt.(vstar) 2sqrt.(vstar)])
