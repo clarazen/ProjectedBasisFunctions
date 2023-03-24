@@ -42,9 +42,9 @@ for d = 1:D
 end
 norm(K̃ - Ksub)/norm(Ksub)
 
-rnks            = Int.([1,5*ones(D-1)...,1]);
+rnks            = Int.([1,3*ones(D-1)...,1]);
 maxiter         = 10;
-dd              = 10
+dd              = 8
 @time tt,cov,res = ALS_modelweights(y,Φ_,rnks,maxiter,σ_n²,dd);
 mstar           = khrtimesttm(Φstar_,tt2ttm(tt,Int.(vcat(M',ones(D)'))))[:,1];
 ttm             = getttm(tt,dd);  

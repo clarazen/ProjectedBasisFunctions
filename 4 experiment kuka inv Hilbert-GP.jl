@@ -29,7 +29,6 @@ D               = size(X,2);
 
 # compute basis functions per dimension
 L               = ones(D) .+ 2*sqrt(ℓ²);
-M               = 30*ones(D);
 
 budget          = size(X,1);
 ΦR,ΛR           = colectofbasisfunc(budget,X,ℓ²,σ_f²,L)

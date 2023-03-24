@@ -1,5 +1,5 @@
 using LinearAlgebra
-using Revise
+#using Revise
 
 includet("../functions/functionsBasic.jl")
 using .functionsBasic
@@ -19,20 +19,65 @@ using .functionsTTmatmul
 N               = 5000;     # number of data points
 D               = 3;        # dimensions
 Md              = 20;       # number of basis functions per dimension
-hyp             = [0.05, 1., 0.001];
-Xall,~,~,K_tot  = gensynthdata(N,D,hyp);
+hyp             = [1, 1., 0.01];
+X,y,f,K         = gensynthdata(N,D,hyp);
 
-boundsMin       = minimum(Xall,dims=1);
-boundsMax       = maximum(Xall,dims=1);
-L               = 1.5*((boundsMax.-boundsMin) ./ 2)[1,:]; 
+boundsMin       = minimum(X,dims=1);
+boundsMax       = maximum(X,dims=1);
+L               = ((boundsMax.-boundsMin) ./ 2)[1,:] .+ 2*hyp[1]; 
 
 # test for term2
-ΦR,ΛR           = colectofbasisfunc(8000,Xall,hyp[1],hyp[2],L);
-Φ,Λ             = colectofbasisfunc(Md*ones(D),Xall,hyp[1],hyp[2],L,true);
+ΦR,ΛR           = colectofbasisfunc(8000,X,hyp[1],hyp[2],L);
+Φ,Λ             = colectofbasisfunc(Md*ones(D),X,hyp[1],hyp[2],L,true);
 sum(ΛR) - prod(sum.(Λ))
 
+norm(K-ΦR*ΛR*ΦR')/norm(K)
 
-function logmarglik(hyp,y,rnks,maxiter)
+logmarglik_bf(hyp,y,X,L,8000)
+logmarglik_full(hyp,X,y)
+
+
+function logmarglik_bf(hyp,y,X,L,budget)
+    ℓ²      = hyp[1];
+    σ_f²    = hyp[2];
+    σ_n²    = hyp[3];
+
+    Φ,Λ     = colectofbasisfunc(budget,X,ℓ²,σ_f²,L);
+    
+    N       = size(X,1);
+    M       = size(Λ,1);
+
+    Z       = σ_n²*diagm(1 ./ diag(Λ)) + Φ'*Φ;
+    Lchol   = cholesky(Z).L
+    term1   = (N-M) * log(σ_n²) + 2*sum(log.(diag(Lchol))) + sum(log.(diag(Λ)))
+    term2   = 1/σ_n² * (y'*y - y'*Φ* (Lchol'\(Lchol\(Φ'*y))) )
+    term3   = N * log(2π)
+
+    return 1/2* (term1 + term2 + term3)
+
+end
+
+function logmarglik_full(hyp,X,y)
+    ℓ²      = hyp[1];
+    σ_f²    = hyp[2];
+    σ_n²    = hyp[3];
+    N       = size(X,1);
+
+    K       = covSE(X,X,[ℓ²,σ_f²,σ_n²])
+    L       = cholesky((K + σ_n²*Matrix(I,N,N))).L
+    N       = size(X,1);
+
+    α       = L'\(L\y)
+
+    term1   = sum(log.(diag(L)))
+    term2   = y'*α
+    term3   = N * log(2π)
+
+    return 1/2 * (term1 + term2 + term3)
+
+end
+
+function logmarglik_ALS(hyp,y,rnks,maxiter)
     ℓ²      = hyp[1];
     σ_f²    = hyp[2];
     σ_n²    = hyp[3];

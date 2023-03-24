@@ -4,4 +4,3 @@ import Pkg;
 Pkg.add("Plots")
 Pkg.add("StatsBase")
 Pkg.add("DelimitedFiles")
-Pkg.add("GaussianProcesses")
