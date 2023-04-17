@@ -5,7 +5,7 @@ using SparseArrays
 using ..functionsTT
 using ..functions_KhatriRao_Kronecker
 
-export ALS_modelweights
+export ALS_modelweights,initsupercores,KhRxTTm
 
 function ALS_modelweights(y::Vector,khr::Vector{Matrix},rnks::Vector{Int},maxiter,σₙ²::Float64)
 # This function solves the linear system y = khr*tt with the ALS for the weight w in tensor train format.

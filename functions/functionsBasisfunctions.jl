@@ -10,13 +10,14 @@ function colectofbasisfunc(M::Vector{Float64},X::Matrix{Float64},ℓ::Float64,σ
     # computes Φ_, such that Φ_*Φ_' approx K
         D = size(X,2)
         Φ_ = Vector{Matrix}(undef,D);
+        sqrtΛ  = Vector{Vector}(undef,D);
         for d = 1:D
-            w     = collect(1:M[d])';
-            Λ     = σ_f^(1/D)*sqrt(2π*ℓ) .* exp.(- ℓ/2 .* ((π.*w')./(2L[d])).^2 )
-            Φ_[d] = (1/sqrt(L[d])) .*sinpi.(  ((X[:,d].+L[d])./2L[d]).*w).*sqrt.(Λ)';
+            w        = collect(1:M[d])';
+            sqrtΛ[d] = sqrt.(σ_f^(1/D)*sqrt(2π*ℓ) .* exp.(- ℓ/2 .* ((π.*w')./(2L[d])).^2 ))
+            Φ_[d]    = (1/sqrt(L[d])) .*sinpi.(  ((X[:,d].+L[d])./2L[d]).*w).*sqrtΛ[d]';
         end
     
-        return Φ_
+        return Φ_,sqrtΛ
 end
 
 function colectofbasisfunc(M::Vector{Float64},X::Matrix{Float64},ℓ::Float64,σ_f::Float64,L::Vector{Float64},eig)
@@ -54,7 +55,7 @@ function colectofbasisfunc(budget::Int,X::Matrix{Float64},ℓ::Float64,σ_f::Flo
             ΦR      = ΦR .* (1/sqrt(L[d])) .*sinpi.(  ((X[:,d].+L[d])./2L[d]).*ind[d,:]')
         end
        
-        return ΦR,ΛR
+        return ΦR,ΛR,ind
 end
 
 end
