@@ -28,14 +28,14 @@ Xtest           = Matrix(readdlm("../ProjectedBasisFunctions - benchmark data/Xt
 ytest           = Matrix(readdlm("../ProjectedBasisFunctions - benchmark data/ytest_kukainv.csv",','))[:,1]
 
 #ℓ²,σ_f²,σ_n²    = [.4706^2,2.8853^2,0.6200^2];
-ℓ²,σ_f²,σ_n²    = [2,2,.1]
+ℓ²,σ_f²,σ_n²    = [.1, 1, .1]
 D               = size(X,2);
 
 # compute basis functions per dimension
 L               = ones(D) .+ 2*sqrt(ℓ²);
 M               = 30*ones(D);
-Φ_,~            = colectofbasisfunc(M,X,ℓ²,σ_f²,L);
-Φstar_,~        = colectofbasisfunc(M,Xtest,ℓ²,σ_f²,L);
+Φ_              = colectofbasisfunc(M,X,ℓ²,σ_f²,L);
+Φstar_          = colectofbasisfunc(M,Xtest,ℓ²,σ_f²,L);
 
 # test kernel matrix
 Xsub            = X[1:10000,:];
@@ -66,9 +66,10 @@ plot(ytest)
 plot!(mstar,ribbon=[2s_tt 2s_tt])
 
 # hyp opt with projected basis functions
-test                = logmarglik_pbf_exp(log.([ℓ²,σ_f²,σ_n²]),X,y,Φ_,tt,M,L,dd)
+Φ,sqrtΛ             = colectofbasisfunc(M,X,ℓ²,σ_f²,L,1);
+test                = logmarglik_pbf_exp(log.([ℓ²,σ_f²,σ_n²]),X,y,Φ,tt,M,L,dd)
 hyp                 = [ℓ²,σ_f²,σ_n²]
-obj                 = hyp -> logmarglik_pbf_exp(hyp,X,y,Φ_,tt,M,L,dd)
+obj                 = hyp -> logmarglik_pbf_exp(hyp,X,y,Φ,tt,M,L,dd)
 optres              = optimize(obj,log.(hyp))
 ℓ²,σ_f²,σ_n²        = exp.(Optim.minimizer(optres))
 logmarglik_pbf_exp(log.([ℓ²,σ_f²,σ_n²]),X,y,Φ_,tt,M,L,dd)
@@ -76,11 +77,11 @@ logmarglik_pbf_exp(log.([ℓ²,σ_f²,σ_n²]),X,y,Φ_,tt,M,L,dd)
 boundsMin           = minimum(X,dims=1);
 boundsMax           = maximum(X,dims=1);
 L                   = ((boundsMax.-boundsMin) ./ 2)[1,:] .+ 2*sqrt(ℓ²); 
-Φ_,Λ               = colectofbasisfunc(M,X,ℓ²,σ_f²,L);
-
+Φ,Λ                 = colectofbasisfunc(M,X,ℓ²,σ_f²,L,1);
+Φstar_              = colectofbasisfunc(M,X,ℓ²,σ_f²,L);
 
 # second round with optimized hyperparameters
-@time tt,cov,res = ALS_modelweights(y,Φ_,rnks,maxiter,σ_n²,dd);
+@time tt,cov,res = ALS_modelweights(y,Φ,rnks,maxiter,σ_n²,dd); 
 mstar           = khrtimesttm(Φstar_,tt2ttm(tt,Int.(vcat(M',ones(D)'))))[:,1];
 ttm             = getttm(tt,dd);  
 Φstarttm        = khrtimesttm(Φstar_,ttm);

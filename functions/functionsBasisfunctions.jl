@@ -17,21 +17,21 @@ function colectofbasisfunc(M::Vector{Float64},X::Matrix{Float64},ℓ::Float64,σ
             Φ_[d]    = (1/sqrt(L[d])) .*sinpi.(  ((X[:,d].+L[d])./2L[d]).*w).*sqrtΛ[d]';
         end
     
-        return Φ_,sqrtΛ
+        return Φ_
 end
 
 function colectofbasisfunc(M::Vector{Float64},X::Matrix{Float64},ℓ::Float64,σ_f::Float64,L::Vector{Float64},eig)
-    # computes Φ and 𝝠 such that Φ*Λ*Φ' approx K
+    # computes Φ and 𝝠 such that Φ*sqrtΛ * sqrtΛ*Φ' approx K
         D = size(X,2)
         Φ = Vector{Matrix}(undef,D);
-        Λ = Vector{Vector}(undef,D);
+        sqrtΛ = Vector{Vector}(undef,D);
         for d = 1:D
-            w     = collect(1:M[d])';
-            Λ[d]  = σ_f^(1/D)*sqrt(2π*ℓ) .* exp.(- ℓ/2 .* ((π.*w')./(2L[d])).^2 )
-            Φ[d] = (1/sqrt(L[d])) .*sinpi.(  ((X[:,d].+L[d])./2L[d]).*w);
+            w           = collect(1:M[d])';
+            sqrtΛ[d]    = sqrt.( σ_f^(1/D)*sqrt(2π*ℓ) .* exp.(- ℓ/2 .* ((π.*w')./(2L[d])).^2 ) )
+            Φ[d]        = (1/sqrt(L[d])) .*sinpi.(  ((X[:,d].+L[d])./2L[d]).*w);
         end
     
-        return Φ,Λ
+        return Φ,sqrtΛ
 end 
 
 function colectofbasisfunc(budget::Int,X::Matrix{Float64},ℓ::Float64,σ_f::Float64,L::Vector)
