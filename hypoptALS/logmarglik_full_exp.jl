@@ -1,4 +1,4 @@
-function logmarglik_full_exp_(hyp,X,y)
+function logmarglik_full_exp(hyp,X,y)
     ℓ²,σ_f²,σ_n²    = exp.(hyp) 
     N               = size(X,1);
 
@@ -16,5 +16,3 @@ function logmarglik_full_exp_(hyp,X,y)
     return term1 +  term2 + term3 
 
 end
-
-logmarglik_full_exp(hyp) = logmarglik_full_exp_(hyp,X,y)

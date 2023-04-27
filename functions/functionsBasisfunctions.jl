@@ -4,7 +4,7 @@ using LinearAlgebra
 using SparseArrays
 using ..functions_KhatriRao_Kronecker
 
-export colectofbasisfunc
+export colectofbasisfunc,bsplines
 
 function colectofbasisfunc(M::Vector{Float64},X::Matrix{Float64},ℓ::Float64,σ_f::Float64,L::Vector{Float64})
     # computes Φ_, such that Φ_*Φ_' approx K
@@ -57,6 +57,49 @@ function colectofbasisfunc(budget::Int,X::Matrix{Float64},ℓ::Float64,σ_f::Flo
        
         return ΦR,ΛR,ind
 end
+
+function bsplines(X,ρ,knotint)
+    N,D         = size(X)
+    A           = basismat(ρ)
+    knotdist    = 1/knotint
+    ind         = Int.(floor.(X ./ knotdist) .+ 1)
+    ind[ ind .> knotint ].= knotint;
+    ind[ ind .< 1 ].= 1;
+
+    inputs      = (X ./ knotdist) .-ind.+1;
+
+    Φ           = Vector{Matrix}(undef,D)
+    for d=1:D
+        bn = inputs[:,d].^reshape(collect(ρ:-1:0),1,ρ+1)*A;   # Construct the nonzero elements of the b-spline basis vectors using the matrix form.
+        
+        Φ[d]    = zeros(N,ρ+knotint);
+        for n = 1:N
+           Φ[d][n,ind[n,d]:ind[n,d]+ρ] = bn[n,:]; #Store them in the correct location within the basis vector. 
+        end
+    end
+
+    return Φ
+
+end
+
+function basismat(ρ::Int)
+# based on implemetation by Karagoz
+# which is based on 'General matrix representations for B-splines', - Kaihuai Qin
+    A        = Vector{Any}(undef,ρ+1)
+    A[1]     = 1;
+
+    for k = 2:ρ+1
+
+        D1   = diagm(collect(1:k-1))
+        D2   = Bidiagonal(zeros(size(collect(k-2:-1:0),1)+1),collect(k-2:-1:0),:U)
+        D    = [D1 zeros(k-1,1)] + D2[1:k-1,:]
+        A[k] = 1/(k-1) *( [A[k-1] ; zeros(1,k-1)] * D + [zeros(1,k-1) ; A[k-1]] * diff(Matrix(I,k,k),dims=1))
+    end
+
+    return reverse(A[ρ+1],dims=1)
+end
+
+
 
 end
 
