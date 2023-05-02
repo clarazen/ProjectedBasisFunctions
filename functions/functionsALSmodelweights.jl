@@ -5,7 +5,7 @@ using SparseArrays
 using ..functionsTT
 using ..functions_KhatriRao_Kronecker
 
-export ALS_modelweights,initsupercores,KhRxTTm
+export ALS_modelweights,initsupercores,KhRxTTm,penalmat
 
 function ALS_modelweights(y::Vector,khr::Vector{Matrix},rnks::Vector{Int},maxiter,σₙ²::Float64)
 # This function solves the linear system y = khr*tt with the ALS for the weight w in tensor train format.
@@ -275,6 +275,84 @@ function ALS_modelweights(y::Vector,khr::Vector{Matrix},rnks::Vector{Int},maxite
         
         return tt,res,ΦWd
     end
+
+    function ALS_modelweights(y::Vector,khr::Vector{Matrix},tt,maxiter,λ::Float64,ρ::Int,knotint::Int,dd::Int)
+        # This function solves the linear system y = khr*tt with the ALS for the weight w in tensor train format.
+        # regularized solution for bsplines
+        # INPUTS: 
+        #   y       observations
+        #   khr     matrices that together define a matrix with Khatri-Rao structure, as in eq. (9)
+        #   rnks    ranks for the TT
+        #   maxiter maximum number of iterations
+        #   σₙ²     noise variance (acts as regularization parameter)
+        
+            D           = size(khr,1)
+        ###########################################################################
+            # initialize 
+            tt0         = tt
+            res         = zeros(maxiter,2D-2)
+            left,right  = initsupercores(khr,tt0,dd);
+            swipe       = [collect(dd:D)...,collect(D-1:-1:2)...,collect(1:dd-1)...];
+            Dir         = Int.([ones(1,D-dd)...,-ones(1,D-1)...,ones(1,dd-1)...]);
+            for iter = 1:maxiter
+                for k = 1:2D-2
+                    d           = swipe[k];
+                    # compute product Φ*W_{\setminus d}
+                    if d == 1
+                        # left[1] is useless, only inputted to not throw error
+                        ΦWd     = KhRxTTm(d,left[1],right[2],khr[1],D); 
+                    elseif d == D
+                        # right[D] is useless, only inputted to not throw error
+                        ΦWd     = KhRxTTm(D,left[D-1],right[D],khr[D],D);
+                    else
+                        ΦWd     = KhRxTTm(d,left[d-1],right[d+1],khr[d],D);
+                    end
+    
+                    if λ == 0 
+                        tt[d]   = reshape(pinv(ΦWd'*ΦWd)*(ΦWd'*y),size(tt0[d])) 
+                    else
+                        # compute penalty matrix
+                        P       = diff(I(ρ + knotint),dims=1);
+                        PP      = P'*P;
+                        Wpen    = penalmat(tt,d,D,P,PP)
+    
+                        # Weighted sum of the difference penalty matrices
+                        WWW = λ*Wpen[1];
+                        for i =2:D
+                            WWW = WWW + λ*Wpen[i];
+                        end
+    
+                        # update dth tt-core
+                        tt[d]       = reshape((ΦWd'*ΦWd + WWW)\(ΦWd'*y),size(tt0[d])) 
+                    end
+                    # compute residual
+                    res[iter,k] = norm(y - ΦWd*tt[d][:])/norm(y)
+                    # shift norm to next core-to-be-updated
+                    tt          = shiftTTnorm(tt,d,Dir[k]) 
+                    # compute new supercore with updated tt-core
+                    left,right  = getsupercores!(d,left,right,tt[d],khr[d],Dir[k],D)                 
+                end
+            end
+    
+            # update dd-th tt-core
+            ΦWd         = KhRxTTm(dd,left[dd-1],right[dd+1],khr[dd],D);
+            if λ == 0
+                tt[dd]  = reshape(pinv(ΦWd'*ΦWd)*(ΦWd'*y),size(tt0[dd]))
+            else
+                # compute penalty matrix
+                P       = diff(I(ρ + knotint),dims=1);
+                PP      = P'*P;
+                Wpen    = penalmat(tt,dd,D,P,PP)
+                # Weighted sum of the difference penalty matrices
+                WWW = λ*Wpen[1];
+                for i =2:D
+                    WWW = WWW + λ*Wpen[i];
+                end
+                tt[dd]      = reshape((ΦWd'*ΦWd + WWW)\(ΦWd'*y),size(tt0[dd])) 
+            end
+            
+            return tt,res,ΦWd
+        end
 
 function KhRxTTm(d::Int,leftd::Array{Float64},rightd::Array{Float64},khr::Matrix,D::Int)
 

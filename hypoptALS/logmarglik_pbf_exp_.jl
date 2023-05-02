@@ -6,7 +6,7 @@
 
 #export logmarglik_pbf_exp
 
-function logmarglik_pbf_exp(hyp,X,y,Φ,tt,hyp1,hyp2,hyp3)
+function logmarglik_pbf_exp(hyp::Vector{Float64},X,y,Φ,tt,hyp1,hyp2,hyp3)
     # used in method inspired by hyrid projection method
     push!(hyp1,exp(hyp[1]))
     push!(hyp2,exp(hyp[2]))
@@ -50,6 +50,26 @@ function logmarglik_pbf_exp(hyp,X,y,Φ,tt,hyp1,hyp2,hyp3)
 
 end
 
+function logmarglik_pbf_exp(logλ,y,Φ,tt,evol)
+    # used in method inspired by hyrid projection method
+    λ               = exp.(logλ[1]);
+                    push!(evol,exp(λ))
+    D               = size(Φ,1)
+    N               = size(Φ[1],1)
+    d               = tt.normcore
+    left,right      = initsupercores(Φ,tt,d);
+    Φp              = KhRxTTm(d,left[d-1],right[d+1],Φ[d],D);
 
+    # compute log marginal likelihood terms
+    Z               = Φp'*Φp + 1/λ*I;
+    Lchol           = cholesky(Z).L;
+
+    term1           = - sum(log.(diag(Lchol))) - N/2*log(λ) 
+    term2           = - 1/2*y'*y + 1/2*y'*Φp*(Z\(Φp'*y))
+    term3           = - N/2 * log(2π)
+
+    return  -(term1 + term2 + term3)
+
+end
 
 #end

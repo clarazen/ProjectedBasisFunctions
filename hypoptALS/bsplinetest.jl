@@ -30,7 +30,7 @@ knotint             = 1
 M                   = Int.((ρ + knotint)*ones(D))
 
 rnks                = Int.([1,4,10*ones(D-3)...,4,1]);
-maxiter             = 2;
+maxiter             = 10;
 Φ                   = bsplines(X,ρ,knotint);
 Φstar               = bsplines(Xtest,ρ,knotint);
 #@time tt,res              = ALS_modelweights(y,Φ,rnks,maxiter,1.9307e-07,ρ,knotint,8);
@@ -51,25 +51,40 @@ plot(ystar[33:end])
 plot!(mstar)
 ylims!((0,1.5))
 
+
+
 # compute penalty matrix
 P       = diff(I(ρ + knotint),dims=1);
 PP      = P'*P;
 Wpen    = penalmat(tt,8,D,P,PP)
 # Weighted sum of the difference penalty matrices
-λ = 1e-12
+
+λ           = 1e-25
 WWW = λ*Wpen[1];
 for i =2:D
     WWW = WWW + λ*Wpen[i];
 end
-tt[8]      = reshape(pinv(ΦWd'*ΦWd + λ*WWW)*(ΦWd'*y),size(tt[8]))
-norm(tt[8])
+
+tt[8]      = reshape(pinv(ΦWd'*ΦWd + WWW)*(ΦWd'*y),size(tt[8]))
+norm(y - ΦWd*tt[8][:])/norm(y)
 mstar               = khrtimesttm(Φstar,tt2ttm(tt,Int.(vcat(M',ones(D)'))))[:,1];
 RMSE(mstar,ystar[33:end])
+plot(ystar[33:end])
+plot!(mstar)
 
-tt,res,ΦWd              = ALS_modelweights(y,Φ,rnks,maxiter,λ,ρ,knotint,8);
+
+tt,res,ΦWd              = ALS_modelweights(y,Φ,tt,maxiter,λ,ρ,knotint,8);
 res[end]
 mstar               = khrtimesttm(Φstar,tt2ttm(tt,Int.(vcat(M',ones(D)'))))[:,1];
 RMSE(mstar,ystar[33:end])
 norm(mstar-ystar[33:end])/norm(ystar[33:end])
 plot(ystar[33:end])
 plot!(mstar)
+
+
+
+evol                = []
+obj                 = hyp -> logmarglik_pbf_exp(hyp,y,Φ,tt,evol)
+optres              = optimize(obj,[log(1)],LBFGS())
+λ                   = exp.(Optim.minimizer(optres))[1] # optimized
+plot(evol,yaxis=:log)
