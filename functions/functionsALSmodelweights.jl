@@ -5,97 +5,23 @@ using SparseArrays
 using ..functionsTT
 using ..functions_KhatriRao_Kronecker
 
-export ALS_modelweights,initsupercores,KhRxTTm,penalmat
+export ALS_modelweights,initsupercores,KhRxTTm,penalmat,initTT
 
-function ALS_modelweights(y::Vector,khr::Vector{Matrix},rnks::Vector{Int},maxiter,σₙ²::Float64)
-# This function solves the linear system y = khr*tt with the ALS for the weight w in tensor train format.
-# INPUTS: 
-#   y       observations
-#   khr     matrices that together define a matrix with Khatri-Rao structure, as in eq. (9)
-#   rnks    ranks for the TT
-#   maxiter maximum number of iterations
-#   σₙ²     noise variance (acts as regularization parameter)
+function ALS_modelweights(y,khr,maxiter,λ,σ_y²,tt)
+    # This function solves the linear system y = khr*tt with the ALS for the weight w in tensor train format.
+    # an initial TT is inputted
 
-    D           = size(khr,1)
-    Md          = size(khr[1],2)
+    D                   = order(tt)   
+    dd                  = tt.normcore
 
-##########################################################################
-    # create site-D canonical initial tensor train    
-    cores = Vector{Array{Float64,3}}(undef,D);
-    for i = 1:D-1 
-        tmp = qr(rand(rnks[i]*Md, rnks[i+1]));
-        cores[i] = reshape(Matrix(tmp.Q),(rnks[i], Md, rnks[i+1]));
-    end
-    cores[D]    = reshape(rand(rnks[D]*Md),(rnks[D], Md, 1));
-    tt0         = TT(cores,D);
-###########################################################################
-    # initialize 
-    tt          = tt0
-    res         = zeros(maxiter,2D-2)
-    left,right  = initsupercores(khr,tt0);
-    swipe       = [collect(D:-1:2)..., collect(1:D-1)...];
-    Dir         = Int.([-ones(1,D-1)...,ones(1,D-1)...]);
-    for iter = 1:maxiter
-        for k = 1:2D-2
-            d           = swipe[k];
-            # compute product Φ*W_{\setminus d}
-            if d == 1
-                # left[1] is useless, only inputted to not throw error
-                ΦWd     = KhRxTTm(d,left[1],right[2],khr[1],D); 
-            elseif d == D
-                # right[D] is useless, only inputted to not throw error
-                ΦWd     = KhRxTTm(D,left[D-1],right[D],khr[D],D);
-            else
-                ΦWd     = KhRxTTm(d,left[d-1],right[d+1],khr[d],D);
-            end
-            # update dth tt-core
-            tmp         = ΦWd'*ΦWd + σₙ² *Matrix(I,size(ΦWd,2),size(ΦWd,2));
-            tt[d]       = reshape(tmp\(ΦWd'*y),size(tt0[d])) 
-            # compute residual
-            res[iter,k] = norm(y - ΦWd*tt[d][:])/norm(y)
-            # shift norm to next core-to-be-updated
-            tt          = shiftTTnorm(tt,d,Dir[k]) 
-            # compute new supercore with updated tt-core
-            left,right  = getsupercores!(d,left,right,tt[d],khr[d],Dir[k],D)                 
-        end
-    end
+    # initialize
+    left,right          = initsupercores(khr,tt,dd);
+    swipe               = [collect(dd:D)...,collect(D-1:-1:2)...,collect(1:dd-1)...];
+    Dir                 = Int.([ones(1,D-dd)...,-ones(1,D-1)...,ones(1,dd-1)...]);
+    covdd               = Matrix{Float64}
     
-    return tt,res
-end
-
-function ALS_modelweights(y::Vector,khr::Vector{Matrix},rnks::Vector{Int},maxiter,σₙ²::Float64,dd::Int)
-    # This function solves the linear system y = khr*tt with the ALS for the weight w in tensor train format
-    # The first and last updated core is specified in dd.
-    # INPUTS: 
-    #   y       observations
-    #   khr     matrices that together define a matrix with Khatri-Rao structure, as in eq. (9)
-    #   rnks    ranks for the TT
-    #   maxiter maximum number of iterations
-    #   σₙ²     noise variance (acts as regularization parameter)
-    #   dd      first core to be updated       
-    
-        D           = size(khr,1)   
-    ##########################################################################
-        # create site-d canonical initial tensor train    
-        cores = Vector{Array{Float64,3}}(undef,D);
-        for d = 1:dd-1 
-            tmp         = qr(rand(rnks[d]*size(khr[d],2), rnks[d+1]));
-            cores[d]    = reshape(Matrix(tmp.Q),(rnks[d], size(khr[d],2), rnks[d+1]));
-        end
-        cores[dd]       = reshape(rand(rnks[dd]*size(khr[dd],2)*rnks[dd+1]),(rnks[dd], size(khr[dd],2), rnks[dd+1]))
-        for d = dd+1:D
-            tmp         = qr(rand(size(khr[d],2)*rnks[d+1],rnks[d]));
-            cores[d]    = reshape(Matrix(tmp.Q)',(rnks[d], size(khr[d],2), rnks[d+1]));
-        end
-        tt0         = TT(cores,dd);
-    ###########################################################################
-    # initialize 
-    tt          = tt0
-    res         = zeros(maxiter,2D-2)
-    left,right  = initsupercores(khr,tt0,dd);
-    swipe       = [collect(dd:D)...,collect(D-1:-1:2)...,collect(1:dd-1)...];
-    Dir         = Int.([ones(1,D-dd)...,-ones(1,D-1)...,ones(1,dd-1)...]);
-    covdd       = Matrix{Float64}
+    # compute tt
+    res                 = zeros(maxiter,2D-2)
     for iter = 1:maxiter
         for k = 1:2D-2
             d           = swipe[k];
@@ -110,9 +36,23 @@ function ALS_modelweights(y::Vector,khr::Vector{Matrix},rnks::Vector{Int},maxite
                 ΦWd     = KhRxTTm(d,left[d-1],right[d+1],khr[d],D);
             end
             # update dth tt-core
-            tmp         = ΦWd'*ΦWd + σₙ² *Matrix(I,size(ΦWd,2),size(ΦWd,2));
-            #tt[d]       = reshape(pinv(tmp)*(ΦWd'*y),size(tt0[d])) 
-            tt[d]       = reshape(tmp\(ΦWd'*y),size(tt0[d])) 
+            if λ == 0.0
+                tt[d]       = reshape(pinv(ΦWd'*ΦWd)*(ΦWd'*y),size(tt[d])) 
+            else
+                tt[d]       = reshape((ΦWd'*ΦWd + λ*I)\(ΦWd'*y),size(tt[d])) 
+                # compute penalty matrix
+                #P       = diff(I(size(khr[1],2)),dims=1);
+                #PP      = P'*P;
+                #Wpen    = penalmat(tt,d,D,P,PP)
+                # Weighted sum of the difference penalty matrices
+                #WWW = λ*Wpen[1];
+                #for i =2:D
+                #    WWW = WWW + λ*Wpen[i];
+                #end
+
+                #tt[d]      = reshape((ΦWd'*ΦWd + WWW)\(ΦWd'*y),size(tt[d]))
+            end
+            
             # compute residual
             res[iter,k] = norm(y - ΦWd*tt[d][:])/norm(y)
             # shift norm to next core-to-be-updated
@@ -121,238 +61,33 @@ function ALS_modelweights(y::Vector,khr::Vector{Matrix},rnks::Vector{Int},maxite
             left,right  = getsupercores!(d,left,right,tt[d],khr[d],Dir[k],D)              
         end
     end
+    
     # update dd-th tt-core
-    ΦWd         = KhRxTTm(dd,left[dd-1],right[dd+1],khr[dd],D);
-    tmp         = ΦWd'*ΦWd + σₙ² *Matrix(I,size(ΦWd,2),size(ΦWd,2));
-    tt[dd]      = reshape(tmp\(ΦWd'*y),size(tt0[dd])) 
-    #tt[dd]      = reshape(pinv(tmp)*(ΦWd'*y),size(tt0[dd])) 
-    covdd       = σₙ²*pinv(tmp)
-
-    return tt,covdd,res
-end
-
-function ALS_modelweights(y::Vector,Φ_::Vector{Matrix},maxiter,σ_n²,dd::Int,tt::TT)
-    # This function solves the linear system y = khr*tt with the ALS for the weight w in tensor train format.
-    # an initial TT is inputted
-    # INPUTS: 
-    #   y       observations
-    #   khr     matrices that together define a matrix with Khatri-Rao structure, as in eq. (9)
-    #   maxiter maximum number of iterations
-    #   σₙ²     noise variance (acts as regularization parameter)
-    #   dd      first core to be updated       
-    #   tt      initial TT
-
-    D               = order(tt)   
-
-    left,right      = initsupercores(Φ_,tt,dd);
-    swipe           = [collect(dd:D)...,collect(D-1:-1:2)...,collect(1:dd-1)...];
-    Dir             = Int.([ones(1,D-dd)...,-ones(1,D-1)...,ones(1,dd-1)...]);
-    res             = zeros(maxiter,2D-2)
-    covdd           = Matrix{Float64}
-    for iter = 1:maxiter
-        for k = 1:2D-2
-            d           = swipe[k];
-            # compute product Φ*W_{\setminus d}
-            if d == 1
-                # left[1] is useless, only inputted to not throw error
-                ΦWd     = KhRxTTm(1,left[1],right[2],Φ_[1],D); 
-            elseif d == D
-                # right[D] is useless, only inputted to not throw error
-                ΦWd     = KhRxTTm(D,left[D-1],right[D],Φ_[D],D);
-            else
-                ΦWd     = KhRxTTm(d,left[d-1],right[d+1],Φ_[d],D);
-            end
-            # update dth tt-core
-            tmp         = ΦWd'*ΦWd + σ_n² *Matrix(I,size(ΦWd,2),size(ΦWd,2));
-            tt[d]       = reshape(tmp\(ΦWd'*y),size(tt[d])) 
-            # compute residual
-            res[iter,k] = norm(y - ΦWd*tt[d][:])/norm(y)
-            # shift norm to next core-to-be-updated
-            tt          = shiftTTnorm(tt,d,Dir[k]) 
-            # compute new supercore with updated tt-core
-            left,right  = getsupercores!(d,left,right,tt[d],Φ_[d],Dir[k],D)              
+    ΦWd                 = KhRxTTm(dd,left[dd-1],right[dd+1],khr[dd],D);
+    if λ == 0
+        tmp             = pinv(ΦWd'*ΦWd)
+        tt[dd]          = reshape(tmp*(ΦWd'*y),size(tt[dd])) 
+        covdd           = σ_y²*tmp
+    else
+        P       = diff(I(size(khr[1],2)),dims=1);
+        PP      = P'*P;
+        Wpen    = penalmat(tt,dd,D,P,PP)
+        # Weighted sum of the difference penalty matrices
+        WWW = λ*Wpen[1];
+        for i =2:D
+            WWW = WWW + λ*Wpen[i];
         end
+
+        #tt[dd]      = reshape((ΦWd'*ΦWd + WWW)\(ΦWd'*y),size(tt[dd]))
+        tt[dd]          = reshape((ΦWd'*ΦWd + λ*I)\(ΦWd'*y),size(tt[dd])) 
+        #covdd           = σ_y²*inv(ΦWd'*ΦWd + λ*I)
     end
 
-    # update dd-th tt-core
-    ΦWd         = KhRxTTm(dd,left[dd-1],right[dd+1],Φ_[dd],D);
-    tmp         = ΦWd'*ΦWd + σ_n² *Matrix(I,size(ΦWd,2),size(ΦWd,2));
-    tt[dd]      = reshape(tmp\(ΦWd'*y),size(tt[dd])) 
-    covdd       = σ_n²*inv(tmp)
-
-    return tt,covdd,res
+    return tt,covdd,res,ΦWd
 end
 
-function ALS_modelweights(y::Vector,khr::Vector{Matrix},rnks::Vector{Int},maxiter,λ::Float64,ρ::Int,knotint::Int,dd::Int)
-    # This function solves the linear system y = khr*tt with the ALS for the weight w in tensor train format.
-    # regularized solution for bsplines
-    # INPUTS: 
-    #   y       observations
-    #   khr     matrices that together define a matrix with Khatri-Rao structure, as in eq. (9)
-    #   rnks    ranks for the TT
-    #   maxiter maximum number of iterations
-    #   σₙ²     noise variance (acts as regularization parameter)
-    
-        D           = size(khr,1)
-        Md          = size(khr[1],2)
-    
-    ##########################################################################
-        # create site-d canonical initial tensor train    
-        cores = Vector{Array{Float64,3}}(undef,D);
-        for d = 1:dd-1 
-            tmp         = qr(rand(rnks[d]*size(khr[d],2), rnks[d+1]));
-            cores[d]    = reshape(Matrix(tmp.Q),(rnks[d], size(khr[d],2), rnks[d+1]));
-        end
-        cores[dd]       = reshape(rand(rnks[dd]*size(khr[dd],2)*rnks[dd+1]),(rnks[dd], size(khr[dd],2), rnks[dd+1]))
-        for d = dd+1:D
-            tmp         = qr(rand(size(khr[d],2)*rnks[d+1],rnks[d]));
-            cores[d]    = reshape(Matrix(tmp.Q)',(rnks[d], size(khr[d],2), rnks[d+1]));
-        end
-        tt0         = TT(cores,dd);
-    ###########################################################################
-        # initialize 
-        tt          = tt0
-        res         = zeros(maxiter,2D-2)
-        left,right  = initsupercores(khr,tt0,dd);
-        swipe       = [collect(dd:D)...,collect(D-1:-1:2)...,collect(1:dd-1)...];
-        Dir         = Int.([ones(1,D-dd)...,-ones(1,D-1)...,ones(1,dd-1)...]);
-        for iter = 1:maxiter
-            for k = 1:2D-2
-                d           = swipe[k];
-                # compute product Φ*W_{\setminus d}
-                if d == 1
-                    # left[1] is useless, only inputted to not throw error
-                    ΦWd     = KhRxTTm(d,left[1],right[2],khr[1],D); 
-                elseif d == D
-                    # right[D] is useless, only inputted to not throw error
-                    ΦWd     = KhRxTTm(D,left[D-1],right[D],khr[D],D);
-                else
-                    ΦWd     = KhRxTTm(d,left[d-1],right[d+1],khr[d],D);
-                end
 
-                if λ == 0 
-                    tt[d]   = reshape(pinv(ΦWd'*ΦWd)*(ΦWd'*y),size(tt0[d])) 
-                else
-                    # compute penalty matrix
-                    P       = diff(I(ρ + knotint),dims=1);
-                    PP      = P'*P;
-                    Wpen    = penalmat(tt,d,D,P,PP)
 
-                    # Weighted sum of the difference penalty matrices
-                    WWW = λ*Wpen[1];
-                    for i =2:D
-                        WWW = WWW + λ*Wpen[i];
-                    end
-
-                    # update dth tt-core
-                    tt[d]       = reshape((ΦWd'*ΦWd + WWW)\(ΦWd'*y),size(tt0[d])) 
-                end
-                # compute residual
-                res[iter,k] = norm(y - ΦWd*tt[d][:])/norm(y)
-                # shift norm to next core-to-be-updated
-                tt          = shiftTTnorm(tt,d,Dir[k]) 
-                # compute new supercore with updated tt-core
-                left,right  = getsupercores!(d,left,right,tt[d],khr[d],Dir[k],D)                 
-            end
-        end
-
-        # update dd-th tt-core
-        ΦWd         = KhRxTTm(dd,left[dd-1],right[dd+1],khr[dd],D);
-        if λ == 0
-            tt[dd]  = reshape(pinv(ΦWd'*ΦWd)*(ΦWd'*y),size(tt0[dd]))
-        else
-            # compute penalty matrix
-            P       = diff(I(ρ + knotint),dims=1);
-            PP      = P'*P;
-            Wpen    = penalmat(tt,dd,D,P,PP)
-            # Weighted sum of the difference penalty matrices
-            WWW = λ*Wpen[1];
-            for i =2:D
-                WWW = WWW + λ*Wpen[i];
-            end
-            tt[dd]      = reshape((ΦWd'*ΦWd + WWW)\(ΦWd'*y),size(tt0[dd])) 
-        end
-        
-        return tt,res,ΦWd
-    end
-
-    function ALS_modelweights(y::Vector,khr::Vector{Matrix},tt,maxiter,λ::Float64,ρ::Int,knotint::Int,dd::Int)
-        # This function solves the linear system y = khr*tt with the ALS for the weight w in tensor train format.
-        # regularized solution for bsplines
-        # INPUTS: 
-        #   y       observations
-        #   khr     matrices that together define a matrix with Khatri-Rao structure, as in eq. (9)
-        #   rnks    ranks for the TT
-        #   maxiter maximum number of iterations
-        #   σₙ²     noise variance (acts as regularization parameter)
-        
-            D           = size(khr,1)
-        ###########################################################################
-            # initialize 
-            tt0         = tt
-            res         = zeros(maxiter,2D-2)
-            left,right  = initsupercores(khr,tt0,dd);
-            swipe       = [collect(dd:D)...,collect(D-1:-1:2)...,collect(1:dd-1)...];
-            Dir         = Int.([ones(1,D-dd)...,-ones(1,D-1)...,ones(1,dd-1)...]);
-            for iter = 1:maxiter
-                for k = 1:2D-2
-                    d           = swipe[k];
-                    # compute product Φ*W_{\setminus d}
-                    if d == 1
-                        # left[1] is useless, only inputted to not throw error
-                        ΦWd     = KhRxTTm(d,left[1],right[2],khr[1],D); 
-                    elseif d == D
-                        # right[D] is useless, only inputted to not throw error
-                        ΦWd     = KhRxTTm(D,left[D-1],right[D],khr[D],D);
-                    else
-                        ΦWd     = KhRxTTm(d,left[d-1],right[d+1],khr[d],D);
-                    end
-    
-                    if λ == 0 
-                        tt[d]   = reshape(pinv(ΦWd'*ΦWd)*(ΦWd'*y),size(tt0[d])) 
-                    else
-                        # compute penalty matrix
-                        P       = diff(I(ρ + knotint),dims=1);
-                        PP      = P'*P;
-                        Wpen    = penalmat(tt,d,D,P,PP)
-    
-                        # Weighted sum of the difference penalty matrices
-                        WWW = λ*Wpen[1];
-                        for i =2:D
-                            WWW = WWW + λ*Wpen[i];
-                        end
-    
-                        # update dth tt-core
-                        tt[d]       = reshape((ΦWd'*ΦWd + WWW)\(ΦWd'*y),size(tt0[d])) 
-                    end
-                    # compute residual
-                    res[iter,k] = norm(y - ΦWd*tt[d][:])/norm(y)
-                    # shift norm to next core-to-be-updated
-                    tt          = shiftTTnorm(tt,d,Dir[k]) 
-                    # compute new supercore with updated tt-core
-                    left,right  = getsupercores!(d,left,right,tt[d],khr[d],Dir[k],D)                 
-                end
-            end
-    
-            # update dd-th tt-core
-            ΦWd         = KhRxTTm(dd,left[dd-1],right[dd+1],khr[dd],D);
-            if λ == 0
-                tt[dd]  = reshape(pinv(ΦWd'*ΦWd)*(ΦWd'*y),size(tt0[dd]))
-            else
-                # compute penalty matrix
-                P       = diff(I(ρ + knotint),dims=1);
-                PP      = P'*P;
-                Wpen    = penalmat(tt,dd,D,P,PP)
-                # Weighted sum of the difference penalty matrices
-                WWW = λ*Wpen[1];
-                for i =2:D
-                    WWW = WWW + λ*Wpen[i];
-                end
-                tt[dd]      = reshape((ΦWd'*ΦWd + WWW)\(ΦWd'*y),size(tt0[dd])) 
-            end
-            
-            return tt,res,ΦWd
-        end
 
 function KhRxTTm(d::Int,leftd::Array{Float64},rightd::Array{Float64},khr::Matrix,D::Int)
 
@@ -370,25 +105,6 @@ function KhRxTTm(d::Int,leftd::Array{Float64},rightd::Array{Float64},khr::Matrix
 
 end
 
-function KhRxTTm(d::Int,leftd::Array{Float64},rightd::Array{Float64},khr::SparseMatrixCSC{Float64, Int64})
-
-    # computes product of matrix in Khatri-Rao format with matrix in TTm format expressed thru leftd and rightd
-    # for ALS to compute model weights of model w = Φ*Wd*Wd
-    # for ALS to compute covariance matrix of u for inducing inputs
-    N           = size(leftd,1)
-    Rd          = size(leftd,2)
-    Md          = size(khr,2)
-
-    if d == D 
-        pr      = KhatriRao(khr,leftd,1)
-    elseif d == 1
-        pr      = KhatriRao(rightd,khr,1)
-    else
-        pr      = KhatriRao(KhatriRao(rightd,khr,1),leftd,1)
-    end    
-    return pr
-
-end
 
 function getsupercores!(d::Int,left::Vector{Array},right::Vector{Array},ttcore::Array{Float64},khr::Matrix,dir::Int,D::Int)
 
@@ -433,68 +149,8 @@ function getsupercores!(d::Int,left::Vector{Array},right::Vector{Array},ttcore::
     return left,right
 end
 
-function getsupercores!(d::Int,left::Vector{Array},right::Vector{Array},ttcore::Array{Float64},khr::SparseMatrixCSC,dir::Int)
 
-    if dir == 1 
-        if d == 1
-            M1              = size(khr,2)
-            R2              = size(ttcore,3)
-            left[1]         = khr*reshape(ttcore,M1,R2)
-        else
-            prevsupercore   = left[d-1];
-            N               = size(prevsupercore,1)
-            Rd              = size(prevsupercore,2)
-            Rdd             = size(ttcore,3)   # R_d+1
-            Md              = size(khr,2)
-            # Khatri-Rao product with next matrix from Khr matrix
-            tmp             = KhatriRao(prevsupercore,khr,1)
-            Tmp             = reshape(tmp,N,Md,Rd)
-            Tmp             = permutedims(Tmp,[1 3 2])
-            tmp1            = reshape(Tmp,    N,Rd*Md)
-            # contraction with tt-core
-            tmp2            = reshape(ttcore,   Rd*Md,Rdd) 
-            left[d]         = reshape(tmp1*tmp2,(N,Rdd))
-        end
-    else 
-        if d == D
-            MD              = size(khr,2)  
-            RD              = size(ttcore,1)
-            right[D]        = khr*reshape(ttcore,RD,MD)'
-        else
-            prevsupercore   = right[d+1];
-            N               = size(prevsupercore,1)
-            Rdd             = size(prevsupercore,2)  # R_d+1
-            Md              = size(khr,2)  
-            Rd              = size(ttcore,1)
-            # Khatri-Rao product with next matrix from Khr matrix
-            tmp1            = KhatriRao(prevsupercore,khr,1)
-            # contraction of previous supercore and tt-core
-            tmp2            = reshape(ttcore,Rd,Md*Rdd)'
-            right[d]        = tmp1*tmp2
-        end
-    end
-    return left,right
-end
-
-function initsupercores(khr::Vector{Matrix},tt0::TT)
-    # initializes left and right supercores for a the first update in the ALS (last core)
-    # works yay :) 
-    D           = size(khr,1)
-    M1          = size(khr[1],2)
-    R2          = size(tt0[1],3)
-    MD          = size(khr[D],2)
-    RD          = size(tt0[D],1)
-    left        = Vector{Array}(undef,D)
-    right       = Vector{Array}(undef,D)
-    left[1]     = khr[1]*reshape(tt0[1],M1,R2)
-    for d = 2:D-1
-        left,right = getsupercores!(d,left,right,tt0[d],khr[d],1,D)
-    end
-    right[D]   = khr[D]*reshape(tt0[D],RD,MD)'
-    return left,right
-end
-
-function initsupercores(khr::Vector{Matrix},tt0::TT,dd::Int)
+function initsupercores(khr,tt0::TT,dd::Int)
     # initializes left and right supercores for a the first update in the ALS (dd-th core)
     # works yay :) 
     D           = size(khr,1)
@@ -515,6 +171,22 @@ function initsupercores(khr::Vector{Matrix},tt0::TT,dd::Int)
 
     return left,right
 end
+
+function initTT(rnks,Md,dd,D)
+    # create site-d canonical initial tensor train    
+    cores = Vector{Array{Float64,3}}(undef,D);
+    for d = 1:dd-1 
+        tmp         = qr(rand(rnks[d]*Md, rnks[d+1]));
+        cores[d]    = reshape(Matrix(tmp.Q),(rnks[d], Md, rnks[d+1]));
+    end
+    cores[dd]       = reshape(rand(rnks[dd]*Md*rnks[dd+1]),(rnks[dd], Md, rnks[dd+1]))
+    for d = dd+1:D
+        tmp         = qr(rand(Md*rnks[d+1],rnks[d]));
+        cores[d]    = reshape(Matrix(tmp.Q)',(rnks[d], Md, rnks[d+1]));
+    end
+    return TT(cores,dd);
+end
+
 
 function penalmat(tt::TT,sweepindex::Int,D::Int64,P::Matrix{Int64},PP::Matrix{Int64})
 
