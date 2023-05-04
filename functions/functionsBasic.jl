@@ -1,8 +1,8 @@
 module functionsBasic
 
-using LinearAlgebra
+using LinearAlgebra, SparseArrays
 
-export gensynthdata, covSE, fullGP
+export gensynthdata, gengriddata, covSE, fullGP
 
 function gensynthdata(N::Int64,D::Int64,hyp::Vector)
     σ_n   = sqrt(hyp[3]);
@@ -51,4 +51,23 @@ function fullGP(K::Matrix,X::Matrix,Xstar::Matrix,y::Vector,hyp::Vector)
     return mstar, vstar
 end
     
+function gengriddata(Md::Int,D::Int,min::Vector,max::Vector,m::Bool)
+    coord = Vector{Vector}(undef,D)
+    X     = spzeros(Md^D,D)
+    for d = 1:D
+        coord[d] = range(min[d],max[d],length=Md) # coordinate in dth dimension
+    end
+    Coord = Tuple(coord)
+    if m == true
+        i=1;
+        for d = D:-1:1
+            X[:,i] = getindex.(Iterators.product(Coord...), d)[:]
+            i = i+1
+        end
+        return X,coord
+    else
+        return coord
+    end
+end
+
 end

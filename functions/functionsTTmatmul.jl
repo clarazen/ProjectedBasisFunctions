@@ -35,7 +35,7 @@ function tt2ttm(tt::TTv,middlesizes::Matrix)
 end
 
 
-function khrtimesttm(khr::Vector{Matrix},ttm::TTm)
+function khrtimesttm(khr,ttm::TTm)
     # computes the produt of two matrices, where the first one (khr) has a 
     # row-wise Khatri-Rao structure and the second (ttm) is a TTm. 
 
