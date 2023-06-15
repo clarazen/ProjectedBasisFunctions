@@ -3,7 +3,7 @@ module functionsTT
 using LinearAlgebra
 import Base: transpose 
 
-export TT, TTv,TTm, size, norm, order, rank, shiftTTnorm, ttv2vec, ttm2mat, TTv_SVD, TTm_SVD
+export TT, TTv,TTm, size, norm, order, rank, shiftTTnorm, ttv2vec, ttm2mat, TTv_SVD, TTm_SVD, TT_ALS
 
 mutable struct TT{N}
     cores::Vector{Array{Float64,N}}
@@ -100,7 +100,7 @@ function ttm2mat(ttm::TTm)
         tensor = tensor*reshape(ttm[i],size(ttm[i],1),size(ttm[i],2)*size(ttm[i],3)*size(ttm[i],4))
         tensor = reshape(tensor, (Int(length(tensor)/size(ttm[i],4)), size(ttm[i],4)));
     end
-    tensor = reshape(tensor,(sizes[1,:]...,sizes[2,:]...));
+    tensor = reshape(tensor,(sizes[:]...));
     tensor = permutedims(tensor,[collect(1:2:2D-1)..., collect(2:2:2D)...]);
     matrix = reshape(tensor,(prod(sizes[1,:]),prod(sizes[2,:])));
     return matrix
@@ -160,5 +160,150 @@ function TT_SVD(tensor::Array{Float64},ϵ::Float64)
         cores[D] = reshape(C,(rprev,sizes[D],1));
         return TT(cores,D), sqrt(err2)/frobnorm
     end
+
+# TT-ALS ###############################################################################
+# Comments:
+# ALS without orthog is really slow (probably getUTU needs to be optimized) 
+# and almost never used unless an initial tt is inputted which is not site-k
+
+# no initial tt, automatically with orthogonalization
+function TT_ALS(tensor::Array{Float64},rnks::Vector{Int64})
+    D     = ndims(tensor);
+    sizes = size(tensor);
+    cores = Vector{Array{Float64,3}}(undef,D);
+    for i = 1:D-1 # creating site-D canonical initial tensor train
+        tmp = qr(rand(rnks[i]*sizes[i], rnks[i+1]));
+        cores[i] = reshape(Matrix(tmp.Q),(rnks[i], sizes[i], rnks[i+1]));
+    end
+    cores[D] = reshape(rand(rnks[D]*sizes[D]),(rnks[D], sizes[D], 1));
+    tt0 = TT(cores,D);
+    return TT_ALS(tensor,tt0)
+end
+
+
+# with / without orthogonalization
+function TT_ALS(tensor::Array{Float64},tt::TTv)
+    maxiter = 10;
+    N       = order(tt);
+    rnks    = rank(tt);
+    sizes   = size(tt);
+
+    for i = 1:maxiter
+        for k = 1:2N-2
+            if tt.normcore == 0
+                swipe = [collect(1:N)..., collect(N-1:-1:2)...];
+                n     = swipe[k];
+                UTU   = getUTU(tt,n);
+                UTy   = getUTy(tt,tensor,n);
+                tt[n] = reshape(inv(UTU)*UTy,(rnks[n],sizes[n],rnks[n+1]));
+            else
+                swipe = [collect(N:-1:2)..., collect(1:N-1)...];
+                Dir   = Int.([-ones(1,N-1)...,ones(1,N-1)...]);
+                n     = swipe[k];
+                UTy   = getUTy(tt,tensor,n);
+                tt[n] = reshape(UTy,(rnks[n],sizes[n],rnks[n+1]));
+                shiftTTnorm(tt,n,Dir[k])
+            end
+        end
+    end
+    return tt
+end
+
+
+# TT-ALS for a vector without initial tt
+function TT_ALS(vector::Vector{Float64},middlesizes::Matrix{Int64},rnks::Vector{Int64})
+    tensor = reshape(vector,Tuple(middlesizes));
+    return TT_ALS(tensor,rnks);
+end
+
+
+# TT-ALS for vector with initial TT
+function TT_ALS(vector::Vector{Float64},tt0::TTv)
+    tensor = reshape(vector,Tuple([size(tt0)[i][1] for i = 1:order(tt0)]));
+    return TT_ALS(tensor,tt0);  
+end
+
+
+##########################################
+# functions for ALS with orthogonalization
+function getUTy(tt::TTv,tensor,n::Int64)
+    N     = order(tt);
+    sizes = size(tensor);
+    rnks  = rank(tt);
+    if n == N 
+        Gleft    = supercores(tt,N);
+        newsizes = (prod(sizes[1:N-1]), sizes[N]);
+        UTy      = Gleft*reshape(tensor,Tuple(newsizes));
+    elseif n == 1
+        Gright   = supercores(tt,1);
+        newsizes = (sizes[1], prod(sizes[2:N]));
+        UTy      = reshape(tensor,Tuple(newsizes))*Gright;
+    else
+        Gleft, Gright = supercores(tt,n);
+        newsizes1     = (prod(sizes[1:n-1]), prod(sizes[n:N]));
+        tmp           = Gleft*reshape(tensor,newsizes1);
+        newsizes2     = (rnks[n][1]*sizes[n], prod(sizes[n+1:N]));
+        UTy           = reshape(tmp,newsizes2)*Gright;
+    end
+    return UTy[:]
+end
+
+function supercores(tt::TTv,n::Int64)
+    D     = order(tt);
+    sizes = size(tt);
+    rnks  = rank(tt);
+    if  n == 1
+        Gright = reshape(tt[2],rnks[2]*sizes[2],rnks[3])
+        for i = 3:D
+            Gright = Gright*reshape(tt[i],rnks[i],sizes[i]*rnks[i+1]);
+            Gright = reshape(Gright,rnks[2]*prod(sizes[2:i]),rnks[i+1])
+        end
+        return reshape(Gright,rnks[2],prod(sizes[2:D]))'
+    elseif n == D
+        Gleft = tt[1][1,:,:];
+        for i = 2:D-1
+            Gleft = Gleft*reshape(tt[i],rnks[i],sizes[i]*rnks[i+1]);
+            Gleft = reshape(Gleft,prod(sizes[1:i]),rnks[i+1]);
+        end
+        return Gleft'
+    else
+        Gleft = tt[1][1,:,:];
+        for i = 2:n-1
+            Gleft = Gleft*reshape(tt[i],rnks[i],sizes[i]*rnks[i+1]);
+            Gleft = reshape(Gleft,prod(sizes[1:i]),rnks[i+1]);
+        end
+
+        Gright = reshape(tt[n+1],rnks[n+1]*sizes[n+1],rnks[n+2])
+        for i = n+2:D
+            Gright = Gright*reshape(tt[i],rnks[i],sizes[i]*rnks[i+1]);
+            Gright = reshape(Gright,rnks[2]*prod(sizes[2:i]),rnks[i+1])
+        end
+        Gright = reshape(Gright,rnks[2],prod(sizes[n+1:D]))
+
+        return Gleft',Gright'
+    end
+end
+
+# function for ALS without orthogonalization
+function getUTU(tt::TTv,n::Int64)
+    N     = order(tt);
+    sizes = size(tt);
+    rnks  = rank(tt);
+
+    Gleft = [1];
+    for i = 1:n-1
+        Gleft = Gleft * contractcores(tt[i],tt[i]);
+    end
+    Gleft = reshape(Gleft,(rnks[n][1],rnks[n][1]));
+
+    Gright = [1];
+    for i = N:-1:n+1
+        Gright = contractcores(tt[i],tt[i]) * Gright;
+    end
+    Gright = reshape(Gright,(rnks[n][2],rnks[n][2]));
+
+    return kron(kron(Gright, 1.0*Matrix(I,sizes[n][1],sizes[n][1])), Gleft)
+end
+
 
 end

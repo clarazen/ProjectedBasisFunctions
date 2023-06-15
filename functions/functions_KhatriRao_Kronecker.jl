@@ -2,15 +2,25 @@ module functions_KhatriRao_Kronecker
 
 using LinearAlgebra
 
-export khr2mat,KhatriRao
+export khr2mat,KhatriRao,kr2ttm
 
-function khr2mat(Φ::Vector{Matrix})
+function khr2mat(Φ::Vector{Matrix{Float64}})
     # computes the row-wise Khatri-Rao product for given set of matrices
     Φ_mat = ones(size(Φ[1],1),1)
     for d = size(Φ,1):-1:1
         Φ_mat = KhatriRao(Φ_mat,Φ[d],1)
     end    
     return Φ_mat
+end
+
+function kr2ttm(kr::Vector{Vector})
+    D       = size(kr,2)
+    cores   = Vector{Array}(undef,D)
+    for d = 1:D
+        Md       = size(kh[d],1)
+        cores[d] = reshape(diagm(kr[d]),1,Md,Md,1)
+    end
+    return TT(cores)
 end
 
 function KhatriRao(A::Matrix{Float64},B::Matrix{Float64},dims::Int64)

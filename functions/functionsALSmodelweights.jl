@@ -5,9 +5,9 @@ using SparseArrays
 using ..functionsTT
 using ..functions_KhatriRao_Kronecker
 
-export ALS_modelweights,initsupercores,KhRxTTm,penalmat,initTT
+export ALS_modelweights,initsupercores,KhRxTTm,penalmat,projectedprior,initTT
 
-function ALS_modelweights(y,khr,maxiter,λ,σ_y²,tt)
+function ALS_modelweights(y,khr,tt,maxiter,prior,σ_y²,mod)
     # This function solves the linear system y = khr*tt with the ALS for the weight w in tensor train format.
     # an initial TT is inputted
 
@@ -35,24 +35,39 @@ function ALS_modelweights(y,khr,maxiter,λ,σ_y²,tt)
             else
                 ΦWd     = KhRxTTm(d,left[d-1],right[d+1],khr[d],D);
             end
-            # update dth tt-core
-            if λ == 0.0
-                tt[d]       = reshape(pinv(ΦWd'*ΦWd)*(ΦWd'*y),size(tt[d])) 
-            else
-                tt[d]       = reshape((ΦWd'*ΦWd + λ*I)\(ΦWd'*y),size(tt[d])) 
-                # compute penalty matrix
-                #P       = diff(I(size(khr[1],2)),dims=1);
-                #PP      = P'*P;
-                #Wpen    = penalmat(tt,d,D,P,PP)
-                # Weighted sum of the difference penalty matrices
-                #WWW = λ*Wpen[1];
-                #for i =2:D
-                #    WWW = WWW + λ*Wpen[i];
-                #end
 
-                #tt[d]      = reshape((ΦWd'*ΦWd + WWW)\(ΦWd'*y),size(tt[d]))
+            # update dth tt-core
+            if mod == 1 # no prior
+                tt[d]   = reshape(pinv(ΦWd'*ΦWd)*(ΦWd'*y),size(tt[d]))
+            elseif mod == 2 # λ as reg parameter for scaled basis functions
+                λ       = prior 
+                tt[d]   = reshape((ΦWd'*ΦWd + λ*I)\(ΦWd'*y),size(tt[d])) 
+            elseif mod == 3 # prior on each TT-core (eg total variation penalty matrix)
+                λ       = prior
+                # compute penalty matrix
+                P       = diff(I(size(Φ[1],2)),dims=1);
+                PP      = P'*P;
+                WWW     = Vector{Matrix}(undef,D);
+                λ       = 1e-7;
+                Wpen    = penalmat(tt,d,D,P,PP)
+                # Weighted sum of the difference penalty matrices
+                WWW = λ*Wpen[1];
+                for i =2:D
+                    WWW = WWW + λ*Wpen[i];
+                end
+                tt[d]   = reshape((ΦWd'*ΦWd + WWW)\(ΦWd'*y),size(tt[d])) 
+            elseif mod == 4 # σ_y^2 as reg parameter for scaled basis functions
+                tt[d]   = reshape((ΦWd'*ΦWd + σ_y²*I)\(ΦWd'*y),size(tt[d])) 
+            elseif mod == 5 # projected prior 
+                Λ       = prior
+                WdΛWd   = projectedprior(tt,Λ,d)
+                tt[d]   = reshape((ΦWd'*ΦWd + σ_y²*inv(WdΛWd))\(ΦWd'*y),size(tt[d]))
+            elseif mod == 6 # projected inverse prior 
+                invΛ        = prior
+                WdinvΛWd    = projectedprior(tt,invΛ,d)
+                tt[d]       = reshape((ΦWd'*ΦWd + σ_y²*WdinvΛWd)\(ΦWd'*y),size(tt[d]))
             end
-            
+                        
             # compute residual
             res[iter,k] = norm(y - ΦWd*tt[d][:])/norm(y)
             # shift norm to next core-to-be-updated
@@ -63,25 +78,53 @@ function ALS_modelweights(y,khr,maxiter,λ,σ_y²,tt)
     end
     
     # update dd-th tt-core
-    ΦWd                 = KhRxTTm(dd,left[dd-1],right[dd+1],khr[dd],D);
-    if λ == 0
-        tmp             = pinv(ΦWd'*ΦWd)
-        tt[dd]          = reshape(tmp*(ΦWd'*y),size(tt[dd])) 
-        covdd           = σ_y²*tmp
+    # compute product Φ*W_{\setminus d}
+    if dd == 1
+        # left[1] is useless, only inputted to not throw error
+        ΦWd     = KhRxTTm(1,left[1],right[2],khr[1],D); 
+    elseif dd == D
+        # right[D] is useless, only inputted to not throw error
+        ΦWd     = KhRxTTm(D,left[D-1],right[D],khr[D],D);
     else
-        P       = diff(I(size(khr[1],2)),dims=1);
-        PP      = P'*P;
-        Wpen    = penalmat(tt,dd,D,P,PP)
+        ΦWd     = KhRxTTm(dd,left[dd-1],right[dd+1],khr[dd],D);
+    end
+
+    if mod == 1 # no prior
+        tmp         = pinv(ΦWd'*ΦWd)
+        tt[dd]      = reshape(tmp*(ΦWd'*y),size(tt[dd]))
+        covdd       = σ_y²*tmp
+    elseif mod == 2 # λ as reg parameter for scaled basis functions
+        λ           = prior 
+        tt[dd]      = reshape((ΦWd'*ΦWd + λ*I)\(ΦWd'*y),size(tt[dd])) 
+    elseif mod == 3 # prior on each TT-core (eg total variation penalty matrix)
+        λ           = prior
+        # compute penalty matrix
+        P           = diff(I(size(Φ[1],2)),dims=1);
+        PP          = P'*P;
+        WWW         = Vector{Matrix}(undef,D);
+        λ           = 1e-7;
+        Wpen        = penalmat(tt,dd,D,P,PP)
         # Weighted sum of the difference penalty matrices
         WWW = λ*Wpen[1];
         for i =2:D
             WWW = WWW + λ*Wpen[i];
         end
-
-        #tt[dd]      = reshape((ΦWd'*ΦWd + WWW)\(ΦWd'*y),size(tt[dd]))
-        tt[dd]          = reshape((ΦWd'*ΦWd + λ*I)\(ΦWd'*y),size(tt[dd])) 
-        #covdd           = σ_y²*inv(ΦWd'*ΦWd + λ*I)
+        tt[dd]      = reshape((ΦWd'*ΦWd + WWW)\(ΦWd'*y),size(tt[dd])) 
+    elseif mod == 4 # σ_y^2 as reg parameter for scaled basis functions
+        tt[dd]      = reshape((ΦWd'*ΦWd + σ_y²*I)\(ΦWd'*y),size(tt[dd])) 
+        covdd       = σ_y²*inv(ΦWd'*ΦWd + σ_y²*I)
+    elseif mod == 5 # projected prior 
+        Λ           = prior
+        WdΛWd       = projectedprior(tt,Λ,dd)
+        tt[dd]      = reshape((ΦWd'*ΦWd + σ_y²*inv(WdΛWd))\(ΦWd'*y),size(tt[dd]))
+        covdd       = σ_y²*inv(ΦWd'*ΦWd + σ_y²*WdΛWd)
+    elseif mod == 6 # projected inverse prior 
+        invΛ    = prior
+        WdinvΛWd    = projectedprior(tt,invΛ,dd)
+        tt[dd]      = reshape((ΦWd'*ΦWd + σ_y²*WdinvΛWd)\(ΦWd'*y),size(tt[dd]))
+        covdd       = σ_y²*inv(ΦWd'*ΦWd + σ_y²*WdinvΛWd)
     end
+
 
     return tt,covdd,res,ΦWd
 end
@@ -179,7 +222,7 @@ function initTT(rnks,Md,dd,D)
         tmp         = qr(rand(rnks[d]*Md, rnks[d+1]));
         cores[d]    = reshape(Matrix(tmp.Q),(rnks[d], Md, rnks[d+1]));
     end
-    cores[dd]       = reshape(rand(rnks[dd]*Md*rnks[dd+1]),(rnks[dd], Md, rnks[dd+1]))
+    cores[dd]       = reshape(randn(rnks[dd]*Md*rnks[dd+1]),(rnks[dd], Md, rnks[dd+1]))
     for d = dd+1:D
         tmp         = qr(rand(Md*rnks[d+1],rnks[d]));
         cores[d]    = reshape(Matrix(tmp.Q)',(rnks[d], Md, rnks[d+1]));
@@ -187,6 +230,47 @@ function initTT(rnks,Md,dd,D)
     return TT(cores,dd);
 end
 
+function projectedprior(tt,Λ,dd)
+    D               = order(tt)
+    rnks            = rank(tt)
+
+    #cores           = Vector{Array{Float64,3}}(undef,D)
+    ttp           = []
+    for d = 1:D
+        tmp         = permutedims(tt[d],[1,3,2])
+        tmp         = reshape(tmp,rnks[d]*rnks[d+1],size(tt[d],2))
+        tmp         = tmp * sqrt.(diagm(Λ[d]))
+        #cores[d]    = permutedims(reshape(tmp,rnks[d],rnks[d+1],size(tt[d],2)),[1,3,2])
+        push!(ttp,permutedims(reshape(tmp,rnks[d],rnks[d+1],size(tt[d],2)),[1,3,2]))
+    end
+    #ttp             = TT(cores)
+
+    if dd > 1
+        left        = reshape(ttp[1],size(ttp[1],2),rnks[2])
+        left        = left'*left
+        for d = 2:dd-1
+            Md      = size(ttp[d],2)
+            tmp     = left*reshape(ttp[d],rnks[d],Md*rnks[d+1])
+            tmp     = reshape(tmp,rnks[d]*Md,rnks[d+1])
+            left    = reshape(ttp[d],rnks[d]*Md,rnks[d+1])'*tmp
+        end
+    else left = 1
+    end
+
+    if dd < D
+        right       = reshape(ttp[D],rnks[D],size(ttp[D],2))
+        right       = right*right'
+        for d = D-1:-1:dd+1
+            Md      = size(ttp[d],2)
+            tmp     = reshape(ttp[d],rnks[d]*Md,rnks[d+1])*right
+            tmp     = reshape(tmp,rnks[d],Md*rnks[d+1])
+            right   = tmp*reshape(ttp[d],rnks[d],Md*rnks[d+1])'
+        end
+    else 
+        right = 1
+    end
+    return kron(kron(right,diagm(Λ[dd])),left)
+end
 
 function penalmat(tt::TT,sweepindex::Int,D::Int64,P::Matrix{Int64},PP::Matrix{Int64})
 

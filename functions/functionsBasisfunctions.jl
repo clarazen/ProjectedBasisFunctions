@@ -3,39 +3,50 @@ module functionsBasisfunctions
 using LinearAlgebra
 using SparseArrays
 using ..functions_KhatriRao_Kronecker
+using SpecialFunctions
 
-export colectofbasisfunc,bsplines
+export basisfunctionsSE!,basisfunctionsMatern!,bsplines
 
-function colectofbasisfunc(M::Vector{Float64},X::Matrix{Float64},ℓ::Float64,σ_f::Float64,L::Vector{Float64})
-    # computes Φ_, such that Φ_*Φ_' approx K
+function basisfunctionsSE!(M::Vector{Float64},X::Matrix{Float64},ℓ::Float64,σ_f::Float64,L::Vector{Float64},Φ_)
+    # computes Φ_, such that Φ_*Φ_' approx K as Khatri Rao multipliers
         D = size(X,2)
-        Φ_ = Vector{Matrix}(undef,D);
-        sqrtΛ  = Vector{Vector}(undef,D);
         for d = 1:D
             w        = collect(1:M[d])';
-            sqrtΛ[d] = sqrt.(σ_f^(1/D)*sqrt(2π*ℓ) .* exp.(- ℓ/2 .* ((π.*w')./(2L[d])).^2 ))
-            Φ_[d]    = (1/sqrt(L[d])) .*sinpi.(  ((X[:,d].+L[d])./2L[d]).*w).*sqrtΛ[d]';
+            sqrtΛ    = sqrt.(σ_f^(1/D)*sqrt(2π*ℓ) .* exp.(- ℓ/2 .* ((π.*w')./(2L[d])).^2 ))
+            Φ_[d]    = (1/sqrt(L[d])) .*sinpi.(  ((X[:,d].+L[d])./2L[d]).*w).*sqrtΛ';
         end
     
         return Φ_
 end
 
-function colectofbasisfunc(M::Vector{Float64},X::Matrix{Float64},ℓ::Float64,σ_f::Float64,L::Vector{Float64},eig)
-    # computes Φ and 𝝠 such that Φ*sqrtΛ * sqrtΛ*Φ' approx K
+function basisfunctionsSE!(M::Vector{Float64},X::Matrix{Float64},ℓ::Float64,σ_f::Float64,L::Vector{Float64},Φ,Λ)
+    # computes Φ (as Khatri Rao multipliers) and 𝝠 such that Φ*Λ*Φ' approx K_SE 
         D = size(X,2)
-        Φ = Vector{Matrix}(undef,D);
-        sqrtΛ = Vector{Vector}(undef,D);
         for d = 1:D
             w           = collect(1:M[d])';
-            sqrtΛ[d]    = sqrt.( σ_f^(1/D)*sqrt(2π*ℓ) .* exp.(- ℓ/2 .* ((π.*w')./(2L[d])).^2 ) )
+            Λ[d]        = σ_f^(1/D)*sqrt(2π*ℓ) .* exp.(- ℓ/2 .* ((π.*w')./(2L[d])).^2 ) 
             Φ[d]        = (1/sqrt(L[d])) .*sinpi.(  ((X[:,d].+L[d])./2L[d]).*w);
         end
     
-        return Φ,sqrtΛ
+        return Φ,Λ
 end 
 
-function colectofbasisfunc(budget::Int,X::Matrix{Float64},ℓ::Float64,σ_f::Float64,L::Vector)
-        # computes leading eigenfunctions
+function basisfunctionsMatern!(M::Vector{Float64},X::Matrix{Float64},ℓ²::Float64,σ_f²::Float64,L::Vector{Float64},Φ,Λ,ν)
+    # computes Φ (as Khatri Rao multipliers) and 𝝠 such that Φ*Λ*Φ' approx K_matern of degree deg
+        D = size(X,2)
+        for d = 1:D
+            w           = collect(1:M[d])';
+            Λ[d]        = σ_f²^(1/D)*2*π^(1/2)*(2ν)^ν/ℓ²^ν * (gamma(ν+1/2,0)/gamma(ν,0)) .* ((2ν/ℓ² .+ 4π^2*((π.*w')./(2L[d])).^2).^(-ν+1/2))
+            Φ[d]        = (1/sqrt(L[d])) .*sinpi.(  ((X[:,d].+L[d])./2L[d]).*w);
+        end
+    
+        return Φ,Λ
+end 
+
+Γfunc(x) = prod(collect(x-1:1))
+
+function basisfunctionsSE!(budget::Int,X::Matrix{Float64},ℓ::Float64,σ_f::Float64,L::Vector)
+        # computes Φ and 𝝠 such that Φ*sqrtΛ * sqrtΛ*Φ' approx K in matrix format
         N       = size(X,1)
         D       = size(X,2)
         M       = Int(ceil(budget^(1/D)));

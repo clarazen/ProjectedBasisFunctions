@@ -51,11 +51,11 @@ function fullGP(K::Matrix,X::Matrix,Xstar::Matrix,y::Vector,hyp::Vector)
     return mstar, vstar
 end
     
-function gengriddata(Md::Int,D::Int,min::Vector,max::Vector,m::Bool)
+function gengriddata(M::Vector,D::Int,min::Vector,max::Vector,m::Bool)
     coord = Vector{Vector}(undef,D)
-    X     = spzeros(Md^D,D)
+    X     = spzeros(prod(M),D)
     for d = 1:D
-        coord[d] = range(min[d],max[d],length=Md) # coordinate in dth dimension
+        coord[d] = range(min[d],max[d],length=M[d]) # coordinate in dth dimension
     end
     Coord = Tuple(coord)
     if m == true

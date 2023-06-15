@@ -13,6 +13,9 @@ xf       = XLSX.readxlsx("C:/Users/cmmenzen/surfdrive/Code/UCI data sets/izmailo
 data     = Float64.(xf["Sheet1"]["A2:E9569"]);
 data     = readdlm("C:/Users/cmmenzen/surfdrive/Code/UCI data sets/airline.csv",',')
 data     = readdlm("C:/Users/cmmenzen/surfdrive/Code/UCI data sets/concrete.csv",',')
+data     = readdlm("C:/Users/cmmenzen/surfdrive/Code/UCI data sets/yacht.csv",',')[1:end-1,:]
+data     = readdlm("C:/Users/cmmenzen/surfdrive/Code/UCI data sets/airfoil.csv",',')
+data     = Float64.(readdlm("C:/Users/cmmenzen/surfdrive/Code/UCI data sets/winequality-red.csv",';')[2:end,:])
 
 # test data
 #data = [1 2 3 10; 4 5 6 11; 7 8 9 12; 0.1 0.2 0.3 1; .4 .5 .6 1.1; .7 .8 .9 1.2; 0.01 0.02 0.03 1.01; .04 .05 .06 1.11]

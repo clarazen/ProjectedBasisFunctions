@@ -19,11 +19,10 @@ includet("../functions/functionsTTmatmul.jl")
 using .functionsTTmatmul
 
 N                   = 2000;     # number of data points
-D                   = 3;        # dimensions
-ℓ²,σ_f²,σ_n²        = [.5, 1., 0.01];
-ρ                   = 3
+D                   = 2;        # dimensions
+ρ                   = 5
 knotint             = 1
-M                   = Int.((ρ + knotint)*ones(D));
+M                   = ρ + knotint
 Xall                = zeros(N,D)
 for d = 1:D
     for n = 1:N
@@ -31,10 +30,13 @@ for d = 1:D
     end
 end
 Φall                = bsplines(Xall,ρ,knotint);
-Wd                  = Matrix(qr(randn(64,64)));
-fall                = khr2mat(Φall)*Wd*rand(64)
+
+fall                = khr2mat(Φall)*randn(M^2)
+scatter(Xall[:,1],Xall[:,2],marker_z=fall)
+
 yall                = fall + sqrt(σ_n²)*randn(N)
 
+Wd                  = Matrix(qr(randn(M,M)));
 X                   = Xall[1:1800,:];
 Xtest               = Xall[1801:end,:];
 y                   = yall[1:1800];
